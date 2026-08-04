@@ -1,0 +1,85 @@
+# Rust
+/target/
+**/*.rs.bk
+Cargo.lock
+
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+/build/
+.apidocs/
+
+# Android
+android/.gradle/
+android/captures/
+android/gradlew
+android/gradlew.bat
+android/local.properties
+android/**/GeneratedPluginRegistrant.java
+android/key.properties
+*.jks
+*.keystore
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/profile
+ios/derivedData/
+ios/Flutter/.last_build_id
+ios/.generated/
+ios/Flutter/ephemeral/
+ios/App.framework
+ios/App.framework.dSYM
+
+# Desktop
+build/
+*.dSYM
+*.exe
+*.exe~
+*.dll
+*.dll~
+*.so
+*.dylib
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+simbridge.db
+
+# Recordings
+recordings/
+*.mp4
+*.webm
+
+# Configuration
+config.toml
+.env
+*.key
+*.pem
+*.crt
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
