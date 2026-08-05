@@ -4,25 +4,25 @@ import 'dart:async';
 import '../networking/websocket_client.dart';
 import '../protocol/message.dart';
 import '../models/simulator.dart';
+import 'gps_service.dart';
 
 class SimBridgeService {
   final WebSocketClient _wsClient = WebSocketClient();
   final List<Simulator> _simulators = [];
   final StreamController<List<Simulator>> _simulatorsController =
       StreamController.broadcast();
-  String? _serverUrl;
-  String? _authToken;
+  final GpsService _gpsService = GpsService();
+  StreamSubscription<Map<String, dynamic>>? _gpsSubscription;
 
   Stream<List<Simulator>> get simulatorsStream => _simulatorsController.stream;
   Stream<Message> get messageStream => _wsClient.messageStream;
   Stream<String> get errorStream => _wsClient.errorStream;
   bool get isConnected => _wsClient.isConnected;
   List<Simulator> get simulators => List.unmodifiable(_simulators);
+  WebSocketClient get wsClient => _wsClient;
+  GpsService get gpsService => _gpsService;
 
   Future<void> connect(String serverUrl, String authToken) async {
-    _serverUrl = serverUrl;
-    _authToken = authToken;
-
     // Convert HTTP URL to WebSocket URL
     final wsUrl = serverUrl.replaceFirst('http', 'ws') + '/ws';
     await _wsClient.connect(wsUrl);
@@ -32,6 +32,8 @@ class SimBridgeService {
   }
 
   void disconnect() {
+    _gpsSubscription?.cancel();
+    _gpsService.stopStreaming();
     _wsClient.disconnect();
     _simulators.clear();
     _simulatorsController.add([]);
@@ -39,7 +41,7 @@ class SimBridgeService {
 
   void _handleMessage(Message message) {
     switch (message.messageType) {
-      case MessageType.simulatorList:
+      case MessageType.simulatorListResponse:
         _handleSimulatorList(message);
         break;
       default:
@@ -58,7 +60,7 @@ class SimBridgeService {
 
   void requestSimulatorList() {
     final message = Message(
-      messageType: MessageType.simulatorList,
+      messageType: MessageType.simulatorListRequest,
       payload: {},
     );
     _wsClient.send(message);
@@ -87,6 +89,31 @@ class SimBridgeService {
     _wsClient.send(message);
   }
 
+  void sendGesture(Map<String, dynamic> gestureData) {
+    final message = Message(
+      messageType: MessageType.gesture,
+      payload: gestureData,
+    );
+    _wsClient.send(message);
+  }
+
+  Future<void> startGpsStreaming(String simulatorId) async {
+    await _gpsService.startStreaming();
+    
+    _gpsSubscription = _gpsService.locationStream.listen((locationData) {
+      final payload = {
+        'simulator_id': simulatorId,
+        'location': locationData,
+      };
+      sendGpsUpdate(payload);
+    });
+  }
+
+  void stopGpsStreaming() {
+    _gpsSubscription?.cancel();
+    _gpsService.stopStreaming();
+  }
+
   void sendGpsUpdate(Map<String, dynamic> gpsData) {
     final message = Message(
       messageType: MessageType.gpsUpdate,
@@ -96,6 +123,8 @@ class SimBridgeService {
   }
 
   void dispose() {
+    _gpsSubscription?.cancel();
+    _gpsService.dispose();
     _wsClient.dispose();
     _simulatorsController.close();
   }

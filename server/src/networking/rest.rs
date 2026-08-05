@@ -15,14 +15,17 @@ use tracing::info;
 /// REST API server state
 #[derive(Clone)]
 pub struct RestServerState {
-    // TODO: Add session manager, auth manager, etc.
     pub sessions: Arc<RwLock<Vec<String>>>,
+    pub android_adapters: Arc<RwLock<Vec<String>>>,
+    pub ios_adapters: Arc<RwLock<Vec<String>>>,
 }
 
 impl RestServerState {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(RwLock::new(Vec::new())),
+            android_adapters: Arc::new(RwLock::new(Vec::new())),
+            ios_adapters: Arc::new(RwLock::new(Vec::new())),
         }
     }
 }
@@ -49,14 +52,13 @@ struct SimulatorInfo {
 }
 
 /// Create REST API router
-pub fn create_router(state: RestServerState) -> Router {
+pub fn create_router() -> Router {
     Router::new()
         .route("/health", get(health_check))
         .route("/api/v1/simulators", get(list_simulators))
         .route("/api/v1/sessions", get(list_sessions))
         .route("/api/v1/sessions", post(create_session))
         .route("/api/v1/sessions/:id", delete(delete_session))
-        .with_state(state)
 }
 
 /// Health check endpoint
@@ -72,21 +74,46 @@ async fn health_check(State(state): State<RestServerState>) -> Json<HealthRespon
 async fn list_simulators(State(state): State<RestServerState>) -> Json<SimulatorsResponse> {
     info!("Listing simulators");
     
-    // TODO: Get actual simulators from adapter manager
-    let simulators = vec![
-        SimulatorInfo {
-            id: "ios-sim-1".to_string(),
-            name: "iPhone 15 Pro".to_string(),
+    let android_adapters = state.android_adapters.read().await;
+    let ios_adapters = state.ios_adapters.read().await;
+    
+    let mut simulators = vec![];
+    
+    // Add Android devices
+    for device_id in android_adapters.iter() {
+        simulators.push(SimulatorInfo {
+            id: device_id.clone(),
+            name: format!("Android Device ({})", device_id),
+            platform: "android".to_string(),
+            status: "available".to_string(),
+        });
+    }
+    
+    // Add iOS devices
+    for device_id in ios_adapters.iter() {
+        simulators.push(SimulatorInfo {
+            id: device_id.clone(),
+            name: format!("iOS Device ({})", device_id),
             platform: "ios".to_string(),
             status: "available".to_string(),
-        },
-        SimulatorInfo {
+        });
+    }
+    
+    // Add default examples if no devices found
+    if simulators.is_empty() {
+        simulators.push(SimulatorInfo {
             id: "android-emu-1".to_string(),
             name: "Pixel 7".to_string(),
             platform: "android".to_string(),
-            status: "available".to_string(),
-        },
-    ];
+            status: "offline".to_string(),
+        });
+        simulators.push(SimulatorInfo {
+            id: "ios-sim-1".to_string(),
+            name: "iPhone 15 Pro".to_string(),
+            platform: "ios".to_string(),
+            status: "offline".to_string(),
+        });
+    }
     
     Json(SimulatorsResponse { simulators })
 }

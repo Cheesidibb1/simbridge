@@ -2,14 +2,14 @@
 
 use clap::Parser;
 use simbridge_shared::logging;
-use tracing::info;
+use tracing::{info, error};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use simbridge_server::{
     core::{session::SessionManager, auth::AuthManager, plugin::PluginManager, PluginContext},
     networking::{websocket::WebSocketServerState, rest::{RestServerState, create_router}},
-    adapters::{ios::IosSimulatorAdapter, android::AndroidEmulatorAdapter},
+    adapters::{ios::IosSimulatorAdapter, android::AndroidEmulatorAdapter, discovery::DeviceDiscovery},
     storage::database::Database,
 };
 
@@ -62,11 +62,37 @@ async fn main() -> anyhow::Result<()> {
     };
     let plugin_manager = Arc::new(RwLock::new(PluginManager::new(plugin_context)));
 
+    // Initialize device discovery
+    let device_discovery = Arc::new(DeviceDiscovery::new());
+    
+    // Discover devices on startup
+    info!("Discovering Android devices...");
+    match device_discovery.discover_android().await {
+        Ok(devices) => info!("Found {} Android device(s)", devices.len()),
+        Err(e) => error!("Failed to discover Android devices: {}", e),
+    }
+    
+    info!("Discovering iOS devices...");
+    match device_discovery.discover_ios().await {
+        Ok(devices) => info!("Found {} iOS device(s)", devices.len()),
+        Err(e) => error!("Failed to discover iOS devices: {}", e),
+    }
+
     // Initialize WebSocket server state
     let ws_state = WebSocketServerState::new();
     
-    // Initialize REST server state
-    let rest_state = RestServerState::new();
+    // Initialize REST server state with discovered devices
+    let android_devices = device_discovery.get_android_adapters().await;
+    let ios_devices = device_discovery.get_ios_adapters().await;
+    
+    let android_device_ids: Vec<String> = android_devices.iter().map(|a| a.device_id().to_string()).collect();
+    let ios_device_ids: Vec<String> = ios_devices.iter().map(|a| a.device_id().to_string()).collect();
+    
+    let rest_state = RestServerState {
+        sessions: Arc::new(RwLock::new(Vec::new())),
+        android_adapters: Arc::new(RwLock::new(android_device_ids)),
+        ios_adapters: Arc::new(RwLock::new(ios_device_ids)),
+    };
 
     // TODO: Initialize simulator adapters
     let _ios_adapter = IosSimulatorAdapter::new(
@@ -80,9 +106,12 @@ async fn main() -> anyhow::Result<()> {
     );
 
     // Create Axum router
-    let app = create_router(rest_state)
-        .route("/ws", axum::routing::get(websocket_handler))
-        .with_state(ws_state);
+    let app = create_router()
+        .route("/ws", axum::routing::get({
+            let ws_state = ws_state.clone();
+            move |ws| websocket_handler(ws, ws_state)
+        }))
+        .with_state(rest_state);
 
     // Start server
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", args.host, args.port))
@@ -101,7 +130,7 @@ async fn main() -> anyhow::Result<()> {
 /// WebSocket handler (re-exported from networking module)
 async fn websocket_handler(
     ws: axum::extract::ws::WebSocketUpgrade,
-    state: axum::extract::State<WebSocketServerState>,
+    state: WebSocketServerState,
 ) -> impl axum::response::IntoResponse {
-    simbridge_server::networking::websocket::websocket_handler(ws, state.0).await
+    simbridge_server::networking::websocket::websocket_handler(ws, state).await
 }

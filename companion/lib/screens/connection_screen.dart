@@ -73,7 +73,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Icon(
-                Icons.cloud_connect,
+                Icons.cloud,
                 size: 64,
                 color: Colors.blue,
               ),

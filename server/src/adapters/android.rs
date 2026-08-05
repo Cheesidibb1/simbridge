@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use std::path::Path;
+use std::process::Command;
 use super::interface::{SimulatorAdapter, AdapterError, ScreenStream, SimulatorStatus};
 use simbridge_shared::protocol::{
     TouchEvent, Gesture, GpsLocation, DeviceButton, Notification,
@@ -13,6 +14,7 @@ pub struct AndroidEmulatorAdapter {
     device_id: String,
     device_name: String,
     connected: bool,
+    adb_path: String,
 }
 
 impl AndroidEmulatorAdapter {
@@ -21,7 +23,34 @@ impl AndroidEmulatorAdapter {
             device_id,
             device_name,
             connected: false,
+            adb_path: "adb".to_string(), // Default to adb in PATH
         }
+    }
+
+    pub fn with_adb_path(mut self, adb_path: String) -> Self {
+        self.adb_path = adb_path;
+        self
+    }
+
+    fn run_adb_command(&self, args: &[&str]) -> Result<String, AdapterError> {
+        let output = Command::new(&self.adb_path)
+            .args(["-s", &self.device_id])
+            .args(args)
+            .output()
+            .map_err(|e| AdapterError::CommandFailed(format!("ADB command failed: {}", e)))?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        } else {
+            Err(AdapterError::CommandFailed(format!(
+                "ADB command failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )))
+        }
+    }
+
+    fn run_adb_shell_command(&self, command: &str) -> Result<String, AdapterError> {
+        self.run_adb_command(&["shell", command])
     }
 }
 
@@ -36,7 +65,15 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
     }
 
     async fn connect(&mut self) -> Result<(), AdapterError> {
-        // TODO: Implement actual connection using ADB
+        // Check if device is available
+        let devices = self.run_adb_command(&["devices"])?;
+        
+        if !devices.contains(&self.device_id) {
+            return Err(AdapterError::ConnectionFailed(
+                format!("Device {} not found", self.device_id)
+            ));
+        }
+
         self.connected = true;
         Ok(())
     }
@@ -72,8 +109,19 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
         Ok(())
     }
 
-    async fn send_touch_event(&mut self, _event: TouchEvent) -> Result<(), AdapterError> {
-        // TODO: Implement touch events using adb shell input
+    async fn send_touch_event(&mut self, event: TouchEvent) -> Result<(), AdapterError> {
+        for touch in &event.touches {
+            let x = touch.x as i32;
+            let y = touch.y as i32;
+            
+            // Convert phase to string for matching
+            let phase_str = format!("{:?}", touch.phase).to_lowercase();
+            
+            if phase_str.contains("began") || phase_str.contains("moved") {
+                self.run_adb_shell_command(&format!("input tap {} {}", x, y))?;
+            }
+            // Ended and Cancelled phases don't need explicit commands
+        }
         Ok(())
     }
 
@@ -83,12 +131,50 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
     }
 
     async fn set_location(&mut self, location: GpsLocation) -> Result<(), AdapterError> {
-        // TODO: Implement location spoofing using adb geo fix
+        // Use adb geo fix to set location
+        let lat = location.latitude;
+        let lon = location.longitude;
+        let alt = location.altitude.unwrap_or(0.0);
+        
+        self.run_adb_command(&["geo", "fix", &lon.to_string(), &lat.to_string(), &alt.to_string()])?;
         Ok(())
     }
 
     async fn press_button(&mut self, button: DeviceButton) -> Result<(), AdapterError> {
-        // TODO: Implement button presses using adb shell input
+        match button {
+            DeviceButton::Home => {
+                self.run_adb_shell_command("input keyevent KEYCODE_HOME")?;
+            }
+            DeviceButton::Back => {
+                self.run_adb_shell_command("input keyevent KEYCODE_BACK")?;
+            }
+            DeviceButton::AppSwitcher => {
+                self.run_adb_shell_command("input keyevent KEYCODE_APP_SWITCH")?;
+            }
+            DeviceButton::VolumeUp => {
+                self.run_adb_shell_command("input keyevent KEYCODE_VOLUME_UP")?;
+            }
+            DeviceButton::VolumeDown => {
+                self.run_adb_shell_command("input keyevent KEYCODE_VOLUME_DOWN")?;
+            }
+            DeviceButton::Mute => {
+                self.run_adb_shell_command("input keyevent KEYCODE_MUTE")?;
+            }
+            DeviceButton::Lock => {
+                self.run_adb_shell_command("input keyevent KEYCODE_POWER")?;
+            }
+            DeviceButton::Unlock => {
+                // Turn screen on and unlock
+                self.run_adb_shell_command("input keyevent KEYCODE_WAKEUP")?;
+                self.run_adb_shell_command("input keyevent KEYCODE_MENU")?;
+            }
+            DeviceButton::Screenshot => {
+                self.run_adb_shell_command("screencap -p /sdcard/screenshot.png")?;
+            }
+            _ => {
+                return Err(AdapterError::NotSupported);
+            }
+        }
         Ok(())
     }
 

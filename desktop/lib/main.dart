@@ -47,7 +47,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           // Sidebar
           Container(
             width: 250,
-            color: Theme.of(context).colorScheme.surfaceVariant,
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
             child: ListView(
               children: [
                 _buildSidebarItem(
