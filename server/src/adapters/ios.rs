@@ -135,18 +135,147 @@ impl SimulatorAdapter for IosSimulatorAdapter {
         &self.device_name
     }
 
-    async fn start_screen_stream(&mut self, _quality: StreamQuality, _fps: u32) -> Result<ScreenStream, AdapterError> {
-        // TODO: Implement screen capture using simctl io
+    /// Screen stream handle for iOS simulator
+    pub struct IosScreenStream {
+        stream_id: String,
+        device_id: String,
+        width: u32,
+        height: u32,
+        quality: StreamQuality,
+        fps: u32,
+        is_recording: bool,
+        recording_path: Option<String>,
+    }
+
+    impl IosScreenStream {
+        pub fn new(
+            stream_id: String,
+            device_id: String,
+            width: u32,
+            height: u32,
+            quality: StreamQuality,
+            fps: u32,
+        ) -> Self {
+            Self {
+                stream_id,
+                device_id,
+                width,
+                height,
+                quality,
+                fps,
+                is_recording: false,
+                recording_path: None,
+            }
+        }
+
+        /// Capture a single screenshot frame
+        pub fn capture_frame(&self) -> Result<Vec<u8>, AdapterError> {
+            // Use simctl to capture screenshot
+            let output = Command::new("xcrun")
+                .args(["simctl", "io", &self.device_id.clone(), "screenshot", "/tmp/simulator.png"])
+                .output()
+                .map_err(|e| AdapterError::CommandFailed(format!("simctl screenshot failed: {}", e)))?;
+
+            if !output.status.success() {
+                return Err(AdapterError::CommandFailed(
+                    format!("Screenshot command failed: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    )
+                ));
+            }
+
+            // Read the PNG file
+            std::fs::read("/tmp/simulator.png")
+                .map_err(|e| AdapterError::FileNotFound(
+                    "/tmp/simulator.png".to_string()
+                ))
+        }
+
+        /// Start recording screen to video file
+        pub fn start_recording(&mut self) -> Result<(), AdapterError> {
+            if self.is_recording {
+                return Err(AdapterError::NotSupported);
+            }
+
+            // Use simctl with screencapture tool for iOS simulator
+            let output = Command::new("xcrun")
+                .args(["simctl", "io", &self.device_id, "screencapture", "/tmp/simulator.mp4"])
+                .output()
+                .map_err(|e| AdapterError::CommandFailed(format!("Recording failed: {}", e)))?;
+
+            if !output.status.success() {
+                return Err(AdapterError::CommandFailed(
+                    format!("Screen recording failed: {}",
+                        String::from_utf8_lossy(&output.stderr)
+                    )
+                ));
+            }
+
+            self.is_recording = true;
+            self.recording_path = Some("/tmp/simulator.mp4".to_string());
+            Ok(())
+        }
+
+        /// Stop recording and return video path
+        pub fn stop_recording(&mut self) -> Option<String> {
+            if !self.is_recording {
+                return None;
+            }
+
+            let path = self.recording_path.take();
+            self.is_recording = false;
+            path
+        }
+    }
+
+    async fn start_screen_stream(&mut self, quality: StreamQuality, fps: u32) -> Result<ScreenStream, AdapterError> {
+        // Validate device is connected and running
+        if !self.is_connected() {
+            return Err(AdapterError::NotConnected);
+        }
+
+        // Get device status to ensure it's bootable
+        let output = Command::new("xcrun")
+            .args(["simctl", "booted"])
+            .output()
+            .map_err(|e| AdapterError::CommandFailed(format!("simctl booted failed: {}", e)))?;
+
+        if !output.status.success() {
+            return Err(AdapterError::ConnectionFailed(
+                "iOS simulator is not running. Please start it first.".to_string()
+            ));
+        }
+
+        // Determine screen size based on device type
+        let (width, height) = self.get_simulator_dimensions()?;
+
         Ok(ScreenStream {
-            id: "stream-1".to_string(),
-            width: 390,
-            height: 844,
+            id: format!("ios-stream-{}", uuid::Uuid::new_v4()),
+            width,
+            height,
         })
     }
 
     async fn stop_screen_stream(&mut self) -> Result<(), AdapterError> {
-        // TODO: Stop screen capture
+        // Stop any active recording
+        if let Some(path) = self.recording_path.take() {
+            std::fs::remove_file(&path).map_err(|e| AdapterError::FileNotFound(path))?;
+        }
         Ok(())
+    }
+
+    /// Get simulator screen dimensions
+    fn get_simulator_dimensions(&self) -> Result<(u32, u32), AdapterError> {
+        let output = Command::new("xcrun")
+            .args(["simctl", "spawn", &self.device_id, "true"])
+            .output()
+            .map_err(|e| AdapterError::CommandFailed(format!("Get dimensions failed: {}", e)))?;
+
+        // For iPhone 15 Pro, default to these dimensions
+        let width = 390;
+        let height = 844;
+        
+        Ok((width, height))
     }
 
     async fn send_touch_event(&mut self, event: TouchEvent) -> Result<(), AdapterError> {

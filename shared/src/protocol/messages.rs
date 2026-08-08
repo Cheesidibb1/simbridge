@@ -75,6 +75,11 @@ pub enum MessageType {
     SettingsUpdate,
     SessionInfo,
     MetricsUpdate,
+
+    // WebRTC-specific messages (bidirectional)
+    WebrtcOffer,
+    WebrtcAnswer,
+    WebrtcIceCandidate,
 }
 
 // Client → Server request payloads

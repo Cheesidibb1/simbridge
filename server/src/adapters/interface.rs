@@ -15,6 +15,23 @@ pub struct ScreenStream {
     pub height: u32,
 }
 
+impl ScreenStream {
+    /// Capture a single frame and return as bytes (PNG/JPEG)
+    async fn capture_frame(&self) -> Result<Vec<u8>, AdapterError> {
+        Err(AdapterError::NotSupported)
+    }
+
+    /// Start continuous recording
+    async fn start_recording(&mut self, output_path: &str) -> Result<(), AdapterError> {
+        Err(AdapterError::NotSupported)
+    }
+
+    /// Stop recording
+    async fn stop_recording(&mut self) -> Result<(), AdapterError> {
+        Err(AdapterError::NotSupported)
+    }
+}
+
 /// Simulator adapter trait
 #[async_trait]
 pub trait SimulatorAdapter: Send + Sync {

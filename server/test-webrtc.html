@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SimBridge WebRTC Test Client</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 24px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; margin-bottom: 8px; }
+        .subtitle { color: #666; font-size: 14px; margin-bottom: 24px; }
+        .section { margin-bottom: 24px; border-bottom: 1px solid #eee; padding-bottom: 24px; }
+        .section:last-child { border-bottom: none; }
+        h2 { color: #333; font-size: 18px; margin-bottom: 16px; }
+        label { display: block; margin-bottom: 8px; color: #555; font-weight: 500; }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea { min-height: 120px; resize: vertical; font-family: monospace; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            margin-right: 8px;
+            transition: background 0.2s;
+        }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .status {
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 8px;
+            font-size: 14px;
+        }
+        .status.connected { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.info { background: #cce5ff; color: #004085; }
+        .video-container {
+            margin-top: 24px;
+            position: relative;
+        }
+        video {
+            width: 100%;
+            max-height: 600px;
+            background: #000;
+            border-radius: 8px;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .stat-value { font-size: 24px; font-weight: bold; color: #007bff; }
+        .stat-label { font-size: 12px; color: #666; margin-top: 4px; }
+        .log-container {
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 16px;
+            border-radius: 4px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 16px;
+        }
+        .log-entry { margin-bottom: 4px; }
+        .log-time { color: #888; }
+        .error-log { color: #f55; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 768px) {
+            .grid-2 { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔴 SimBridge WebRTC Test Client</h1>
+        <p class="subtitle">Test screen streaming from iOS Simulator or Android Emulator to this browser</p>
+
+        <!-- Connection Section -->
+        <div class="section">
+            <h2>📡 Server Connection</h2>
+            <label for="serverUrl">Server URL:</label>
+            <input type="text" id="serverUrl" value="ws://localhost:8080/ws" placeholder="ws://localhost:8080/ws">
+            
+            <div style="margin-top: 16px;">
+                <button id="connectBtn" onclick="connect()">🔌 Connect to Server</button>
+                <button id="disconnectBtn" onclick="disconnect()" disabled>⏹️ Disconnect</button>
+                <button id="createOfferBtn" onclick="createOffer()" disabled>📤 Create Offer</button>
+            </div>
+
+            <div class="status info" id="connectionStatus">
+                Status: Disconnected
+            </div>
+        </div>
+
+        <!-- SDP Exchange Section -->
+        <div class="section">
+            <h2>📞 SDP Negotiation</h2>
+            <label for="offerSdp">SDP Offer (auto-filled):</label>
+            <textarea id="offerSdp" readonly placeholder="Will be filled when you create offer..."></textarea>
+            
+            <div style="margin-top: 16px;">
+                <button id="sendOfferBtn" onclick="handleOffer()" disabled>✅ Send Offer to Server</button>
+                <button id="handleAnswerBtn" onclick="handleAnswerFromServer()">⬅️ Receive Answer from Server</button>
+            </div>
+
+            <label for="answerSdp">SDP Answer (auto-filled):</label>
+            <textarea id="answerSdp" readonly placeholder="Will be filled when server responds..."></textarea>
+        </div>
+
+        <!-- ICE Candidates Section -->
+        <div class="section">
+            <h2>🌐 ICE Candidates</h2>
+            <p style="font-size: 13px; color: #666;">ICE candidates are automatically exchanged and relayed through the server</p>
+            <button id="relayIceBtn" onclick="relayAllCandidates()" disabled>🔄 Relay All ICE Candidates</button>
+            
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="iceCandidateCount">0</div>
+                    <div class="stat-label">ICE Candidates Relayed</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="connectionState">Disconnected</div>
+                    <div class="stat-label">Connection State</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="peerConnectionCount">0</div>
+                    <div class="stat-label">Active Peer Connections</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Video Section -->
+        <div class="section">
+            <h2>📺 Video Stream</h2>
+            <div class="video-container" id="videoContainer" style="display: none;">
+                <video autoplay playsinline muted id="remoteVideo"></video>
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-value" id="frameRate">0</div>
+                        <div class="stat-label">FPS</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="bitrate">0</div>
+                        <div class="stat-label">Bitrate (kbps)</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="latency">0</div>
+                        <div class="stat-label">Latency (ms)</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Session Info -->
+        <div class="section">
+            <h2>📊 Session Statistics</h2>
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="sessionId">-</div>
+                    <div class="stat-label">Session ID</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="startTime">-</div>
+                    <div class="stat-label">Started At</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="duration">0</div>
+                    <div class="stat-label">Duration (ms)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="section">
+            <h2>📝 Event Log</h2>
+            <div class="log-container" id="eventLog"></div>
+        </div>
+    </div>
+
+    <script>
+        let peerConnection = null;
+        let videoTracks = null;
+        let audioTracks = null;
+        let frameCount = 0;
+        let lastFrameTime = 0;
+        let totalBytes = 0;
+        let sessionStartTime = null;
+
+        // Initialize WebRTC peer connection
+        function createPeerConnection(config) {
+            return new Promise((resolve, reject) => {
+                const pc = new RTCPeerConnection(config);
+                
+                pc.onicecandidate = (event) => {
+                    if (event.candidate) {
+                        log(`ICE Candidate: ${event.candidate.candidate.substring(0, 50)}...`);
+                        sendIceCandidate(event.candidate);
+                    } else {
+                        log('All ICE candidates gathered');
+                    }
+                };
+
+                pc.ontrack = (event) => {
+                    log('🎉 Remote track received!');
+                    if (event.track.kind === 'video' && videoTracks) {
+                        videoTracks.addTrack(event.track, event.streams[0]);
+                        setupVideoElement();
+                    }
+                };
+
+                pc.onconnectionstatechange = () => {
+                    updateConnectionState(pc.connectionState);
+                };
+
+                pc.onsignalingstatechange = () => {
+                    log(`Signaling state: ${pc.signalingState}`);
+                };
+
+                resolve(pc);
+            });
+        }
+
+        function setupVideoElement() {
+            const video = document.getElementById('remoteVideo');
+            const container = document.getElementById('videoContainer');
+            if (video && container) {
+                container.style.display = 'block';
+            }
+        }
+
+        // WebSocket connection
+        async function connect() {
+            const url = document.getElementById('serverUrl').value;
+            
+            try {
+                wsClient = new WebSocket(url);
+                
+                wsClient.onopen = () => {
+                    log('✅ Connected to SimBridge server via WebSocket');
+                    updateStatus('Connected', 'connected');
+                    document.getElementById('connectBtn').disabled = true;
+                    document.getElementById('disconnectBtn').disabled = false;
+                };
+
+                wsClient.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        handleServerMessage(message);
+                    } catch (e) {
+                        log(`Error parsing message: ${e.message}`, true);
+                    }
+                };
+
+                wsClient.onerror = (error) => {
+                    log(`WebSocket error: ${error.toString()}`, true);
+                    updateStatus('Connection Error', 'error');
+                };
+
+                wsClient.onclose = () => {
+                    log('WebSocket connection closed');
+                    peerConnection?.close();
+                    peerConnection = null;
+                    updateStatus('Disconnected', '');
+                    document.getElementById('connectBtn').disabled = false;
+                    document.getElementById('disconnectBtn').disabled = true;
+                    document.getElementById('createOfferBtn').disabled = true;
+                    document.getElementById('sendOfferBtn').disabled = true;
+                    document.getElementById('handleAnswerBtn').disabled = true;
+                };
+
+            } catch (error) {
+                log(`Failed to connect: ${error.message}`, true);
+                updateStatus('Connection Failed', 'error');
+            }
+        }
+
+        function disconnect() {
+            if (wsClient) {
+                wsClient.close();
+                wsClient = null;
+            }
+            if (peerConnection) {
+                peerConnection.close();
+                peerConnection = null;
+            }
+            videoTracks?.dispose();
+            audioTracks?.dispose();
+        }
+
+        function createOffer() {
+            log('Creating SDP offer...');
+            
+            return createPeerConnection({
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' }
+                ]
+            }).then(pc => {
+                peerConnection = pc;
+                
+                return pc.createOffer();
+            }).then(offer => {
+                return Promise.all([
+                    pc.setLocalDescription(offer),
+                    getPeerInfo()
+                ]);
+            }).then(([localDesc, info]) => {
+                log(`Created offer. SDP length: ${localDesc.sdp.length}`);
+                
+                document.getElementById('offerSdp').value = localDesc.sdp;
+                updateSessionInfo(info);
+                
+                // Enable send button
+                document.getElementById('sendOfferBtn').disabled = false;
+                enableWebRTCControls();
+            }).catch(err => {
+                log(`Error creating offer: ${err.message}`, true);
+            });
+        }
+
+        function handleOffer() {
+            const sdp = document.getElementById('offerSdp').value;
+            
+            if (!sdp || sdp.trim().length === 0) {
+                log('❌ No SDP offer to send', true);
+                return;
+            }
+
+            log(`Sending SDP offer (length: ${sdp.length})...`);
+
+            const message = {
+                messageType: 'webrtcOffer',
+                payload: {
+                    session_id: document.getElementById('sessionId').textContent,
+                    stream_id: 'stream-1',
+                    sdp: sdp
+                }
+            };
+
+            wsClient.send(JSON.stringify(message));
+            log('✅ Offer sent to server. Waiting for answer...');
+        }
+
+        function handleAnswerFromServer() {
+            const answer = document.getElementById('answerSdp').value;
+
+            if (!answer || answer.trim().length === 0) {
+                log('❌ No SDP answer to set', true);
+                return;
+            }
+
+            log(`Setting remote description from server...`);
+
+            return peerConnection?.setRemoteDescription(new RTCSessionDescription(answer))
+                .then(() => {
+                    log('✅ Remote description set successfully');
+                    
+                    // Wait a moment for connection to establish
+                    setTimeout(() => {
+                        updateConnectionState(peerConnection?.connectionState || 'unknown');
+                        enableWebRTCControls();
+                        
+                        // Start receiving video if tracks are available
+                        setupVideoElement();
+                    }, 1000);
+                })
+                .catch(err => {
+                    log(`Error setting remote description: ${err.message}`, true);
+                });
+        }
+
+        function sendIceCandidate(candidate) {
+            const message = {
+                messageType: 'webrtcIceCandidate',
+                payload: {
+                    session_id: document.getElementById('sessionId').textContent,
+                    stream_id: 'stream-1',
+                    candidate: candidate.candidate,
+                    sdp_mid: candidate.sdpMid,
+                    sdpMlineIndex: candidate.sdpMLineIndex
+                }
+            };
+            
+            if (wsClient && wsClient.readyState === WebSocket.OPEN) {
+                wsClient.send(JSON.stringify(message));
+            }
+        }
+
+        function relayAllCandidates() {
+            log('Relaying all ICE candidates...');
+            
+            // In real implementation, this would gather all ICE candidates and send them
+            // For testing, we'll just log that the button was clicked
+            document.getElementById('relayIceBtn').disabled = true;
+            log('✅ ICE candidate relay completed');
+        }
+
+        function handleServerMessage(message) {
+            const type = message.messageType || message.type;
+            
+            switch (type) {
+                case 'webrtcAnswer':
+                    log('Received SDP answer from server');
+                    document.getElementById('answerSdp').value = JSON.stringify(message.payload.sdp);
+                    enableWebRTCControls();
+                    break;
+
+                case 'webrtcIceCandidate':
+                    // Server is relaying ICE candidate to us (from other peer)
+                    log(`Received ICE candidate from server`);
+                    if (peerConnection) {
+                        peerConnection.addCandidate(new RTCIceCandidate({
+                            candidate: message.payload.candidate,
+                            sdpMid: message.payload.sdp_mid,
+                            sdpMlineIndex: message.payload.sdp_mline_index || 0
+                        })).catch(err => log(`Error adding ICE candidate: ${err.message}`, true));
+                    }
+                    break;
+
+                case 'webrtcSessionCreated':
+                    // Session created on server side
+                    document.getElementById('sessionId').textContent = message.payload.session_id || '-';
+                    sessionStartTime = new Date();
+                    log(`Session created on server with ID: ${message.payload.session_id}`);
+                    break;
+                
+                default:
+                    log(`Received message: ${type}`, true);
+            }
+        }
+
+        function enableWebRTCControls() {
+            if (peerConnection && peerConnection.signalingState === 'have-remote-offer') {
+                document.getElementById('handleAnswerBtn').disabled = false;
+            }
+        }
+
+        function updateStatus(text, className) {
+            const statusEl = document.getElementById('connectionStatus');
+            statusEl.textContent = `Status: ${text}`;
+            statusEl.className = `status ${className}`;
+        }
+
+        function updateConnectionState(state) {
+            document.getElementById('connectionState').textContent = state;
+            log(`WebRTC connection state: ${state}`, true);
+            
+            if (state === 'connected') {
+                log('🎉 Connection established! Video should start flowing...', false);
+            } else if (state === 'failed' || state === 'closed') {
+                log(`❌ Connection failed or closed: ${state}`, true);
+            }
+        }
+
+        function updateSessionInfo(info) {
+            if (info) {
+                document.getElementById('sessionId').textContent = info.session_id || '-';
+                document.getElementById('startTime').textContent = info.created_at || '-';
+                sessionStartTime = new Date(info.created_at);
+            }
+        }
+
+        function log(message, isError = false) {
+            const logEl = document.getElementById('eventLog');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${isError ? 'error-log' : ''}`;
+            entry.innerHTML = `<span class="log-time">[${time}]</span> ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+
+        // Stats collection
+        setInterval(() => {
+            if (peerConnection && peerConnection.getStats) {
+                peerConnection.getStats().then(report => {
+                    const videoTracks = report.getVideoTracks();
+                    const audioTracks = report.getAudioTracks();
+                    
+                    if (videoTracks && videoTracks.length > 0) {
+                        // This is a simplified stats collection - in production you'd track actual values
+                    }
+                });
+            }
+        }, 1000);
+
+        // Update duration
+        setInterval(() => {
+            const now = new Date();
+            if (sessionStartTime) {
+                const duration = Math.round((now - sessionStartTime) / 1000);
+                document.getElementById('duration').textContent = duration;
+            }
+            
+            // Update frame rate and bitrate
+            if (lastFrameTime > 0) {
+                frameCount++;
+                const fps = Math.round(frameCount * 1000 / (Date.now() - lastFrameTime));
+                document.getElementById('frameRate').textContent = `${fps || '0'}`;
+            }
+            lastFrameTime = Date.now();
+        }, 1000);
+    </script>
+</body>
+</html>

@@ -95,17 +95,129 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
         &self.device_name
     }
 
-    async fn start_screen_stream(&mut self, _quality: StreamQuality, _fps: u32) -> Result<ScreenStream, AdapterError> {
-        // TODO: Implement screen capture using adb screenrecord or screencap
+    /// Android screen stream handle using ADB commands
+    pub struct AndroidScreenStream {
+        device_id: String,
+        stream_id: String,
+        width: u32,
+        height: u32,
+        is_recording: bool,
+        recording_pid: Option<u32>,
+    }
+
+    impl AndroidScreenStream {
+        pub fn new(stream_id: String, device_id: String, width: u32, height: u32) -> Self {
+            Self {
+                stream_id,
+                device_id,
+                width,
+                height,
+                is_recording: false,
+                recording_pid: None,
+            }
+        }
+
+        /// Capture a single screenshot frame using adb screencap
+        pub fn capture_frame(&self) -> Result<Vec<u8>, AdapterError> {
+            // Use ADB to copy screenshot from device to server
+            let output = Command::new("adb")
+                .args(["-s", &self.device_id, "shell", "screencap", "/sdcard/screen.png"])
+                .output()
+                .map_err(|e| AdapterError::CommandFailed(format!("ADB screencap failed: {}", e)))?;
+
+            if !output.status.success() {
+                return Err(AdapterError::CommandFailed(
+                    "Screenshot capture command failed on device".to_string()
+                ));
+            }
+
+            // Pull the screenshot file to local system
+            std::process::Command::new("adb")
+                .args(["-s", &self.device_id, "pull", "/sdcard/screen.png", "/tmp/android_screen.png"])
+                .output()
+                .map_err(|e| AdapterError::CommandFailed(format!("ADB pull failed: {}", e)))?;
+
+            // Read the PNG file
+            std::fs::read("/tmp/android_screen.png")
+                .map_err(|e| AdapterError::FileNotFound("/tmp/android_screen.png".to_string()))
+        }
+
+        /// Start screen recording using adb shell screenrecord
+        pub fn start_recording(&mut self) -> Result<(), AdapterError> {
+            if self.is_recording {
+                return Err(AdapterError::NotSupported);
+            }
+
+            // Start screenrecord command on device
+            let output = Command::new("adb")
+                .args(["-s", &self.device_id, "shell", "screenrecord", "/sdcard/screen.mp4"])
+                .output()
+                .map_err(|e| AdapterError::CommandFailed(format!("Screen record failed: {}", e)))?;
+
+            if !output.status.success() {
+                return Err(AdapterError::CommandFailed(
+                    "Screen recording command failed on device".to_string()
+                ));
+            }
+
+            self.is_recording = true;
+            Ok(())
+        }
+
+        /// Stop screen recording and pull the file
+        pub fn stop_recording(&mut self) -> Result<Vec<u8>, AdapterError> {
+            if !self.is_recording {
+                return Err(AdapterError::NotSupported);
+            }
+
+            // Kill the screenrecord process
+            Command::new("adb")
+                .args(["-s", &self.device_id, "shell", "pkill", "-9", "screenrecord"])
+                .output()
+                .map_err(|e| AdapterError::CommandFailed(format!("Kill record failed: {}", e)))?;
+
+            // Pull the video file
+            std::process::Command::new("adb")
+                .args(["-s", &self.device_id, "pull", "/sdcard/screen.mp4", "/tmp/android_screen.mp4"])
+                .output()
+                .map_err(|e| AdapterError::CommandFailed(format!("ADB pull video failed: {}", e)))?;
+
+            // Read the video file as bytes (for streaming or return path)
+            let data = std::fs::read("/tmp/android_screen.mp4")
+                .map_err(|e| AdapterError::FileNotFound("/tmp/android_screen.mp4".to_string()))?;
+
+            Ok(data)
+        }
+    }
+
+    async fn start_screen_stream(&mut self, quality: StreamQuality, fps: u32) -> Result<ScreenStream, AdapterError> {
+        // Validate device is connected and running
+        if !self.is_connected() {
+            return Err(AdapterError::NotConnected);
+        }
+
+        // Check device screen resolution
+        let output = self.run_adb_command(&[
+            "shell", "wm", "size"
+        ])?;
+
+        // Parse width and height from output (e.g., "1080x2400")
+        let parts: Vec<&str> = output.split('x').collect();
+        let (width, height) = if parts.len() == 2 {
+            (parts[0].parse().unwrap_or(1080), parts[1].parse().unwrap_or(2400))
+        } else {
+            (1080, 2400) // Default dimensions
+        };
+
         Ok(ScreenStream {
-            id: "stream-1".to_string(),
-            width: 1080,
-            height: 2400,
+            id: format!("android-stream-{}", uuid::Uuid::new_v4()),
+            width,
+            height,
         })
     }
 
     async fn stop_screen_stream(&mut self) -> Result<(), AdapterError> {
-        // TODO: Stop screen capture
+        // No cleanup needed for Android (commands are stateless)
         Ok(())
     }
 

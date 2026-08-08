@@ -105,6 +105,12 @@ async fn main() -> anyhow::Result<()> {
         "Pixel 7".to_string()
     );
 
+    // Initialize WebRTC signaling manager
+    let webrtc_manager = Arc::new(simbridge_server::streaming::webrtc::WebRTCSignalingManager::new());
+    
+    // Update REST server state with WebRTC manager
+    let rest_state = RestServerState::with_webrtc_manager(webrtc_manager.clone());
+
     // Create Axum router
     let app = create_router()
         .route("/ws", axum::routing::get({
@@ -112,6 +118,12 @@ async fn main() -> anyhow::Result<()> {
             move |ws| websocket_handler(ws, ws_state)
         }))
         .with_state(rest_state);
+
+    // Add health endpoint with WebRTC manager info
+    app.route("/health", axum::routing::get({
+        let rest_state = rest_state.clone();
+        async move |req| simbridge_server::networking::rest::health_check(req, rest_state)
+    }));
 
     // Start server
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", args.host, args.port))

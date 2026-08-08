@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
+use simbridge_shared::uuid::Uuid;
+use simbridge_server::streaming::webrtc::{WebRTCSignalingManager, WebRTCSignal, WebRTCSessionStats};
 
 /// REST API server state
 #[derive(Clone)]
@@ -18,6 +20,8 @@ pub struct RestServerState {
     pub sessions: Arc<RwLock<Vec<String>>>,
     pub android_adapters: Arc<RwLock<Vec<String>>>,
     pub ios_adapters: Arc<RwLock<Vec<String>>>,
+    /// WebRTC signaling manager instance (wrapped in Arc for sharing)
+    pub webrtc_manager: Option<Arc<WebRTCSignalingManager>>,
 }
 
 impl RestServerState {
@@ -26,6 +30,16 @@ impl RestServerState {
             sessions: Arc::new(RwLock::new(Vec::new())),
             android_adapters: Arc::new(RwLock::new(Vec::new())),
             ios_adapters: Arc::new(RwLock::new(Vec::new())),
+            webrtc_manager: None,
+        }
+    }
+
+    pub fn with_webrtc_manager(webrtc_manager: Arc<WebRTCSignalingManager>) -> Self {
+        Self {
+            sessions: Arc::new(RwLock::new(Vec::new())),
+            android_adapters: Arc::new(RwLock::new(Vec::new())),
+            ios_adapters: Arc::new(RwLock::new(Vec::new())),
+            webrtc_manager: Some(webrtc_manager),
         }
     }
 }
@@ -51,14 +65,163 @@ struct SimulatorInfo {
     status: String,
 }
 
+/// WebRTC-specific request/response types
+#[derive(Debug, Deserialize)]
+struct CreateWebrtcSessionRequest {
+    simulator_id: String,
+    device_id: String,
+    stream_id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct WebrtcSessionResponse {
+    session_id: String,
+    simulator_id: String,
+    status: String,
+}
+
+/// WebRTC message types for WebSocket communication
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum WebRtcMessage {
+    /// Client sends offer to server (browser-initiated)
+    Offer {
+        sdp: String,
+        session_id: String,
+        stream_id: String,
+    },
+    /// Server responds with answer
+    Answer {
+        sdp: String,
+        session_id: String,
+        stream_id: String,
+    },
+    /// ICE candidate exchange
+    IceCandidate {
+        candidate: String,
+        sdp_mid: Option<String>,
+        sdp_mline_index: u16,
+        session_id: String,
+        stream_id: String,
+    },
+}
+
+impl WebRtcMessage {
+    pub fn from_protocol_message(msg: simbridge_shared::protocol::Message) -> Self {
+        // Extract payload and dispatch to appropriate message type
+        let payload = msg.payload.clone();
+        let message_type = msg.message_type;
+
+        match message_type {
+            simbridge_shared::protocol::MessageType::WebrtcOffer => {
+                WebRtcMessage::Offer {
+                    sdp: payload.get("sdp").unwrap_or(&"".to_string()).to_string(),
+                    session_id: payload.get("session_id").unwrap_or(&"unknown".to_string())
+                        .to_string(),
+                    stream_id: payload.get("stream_id").unwrap_or(&"stream-1".to_string())
+                        .to_string(),
+                }
+            }
+            simbridge_shared::protocol::MessageType::WebrtcAnswer => {
+                WebRtcMessage::Answer {
+                    sdp: payload.get("sdp").unwrap_or(&"".to_string()).to_string(),
+                    session_id: payload.get("session_id").unwrap_or(&"unknown".to_string())
+                        .to_string(),
+                    stream_id: payload.get("stream_id").unwrap_or(&"stream-1".to_string())
+                        .to_string(),
+                }
+            }
+            simbridge_shared::protocol::MessageType::WebrtcIceCandidate => {
+                WebRtcMessage::IceCandidate {
+                    candidate: payload.get("candidate").unwrap_or(&"".to_string()).to_string(),
+                    sdp_mid: payload.get("sdp_mid"),
+                    sdp_mline_index: payload.get("sdp_mline_index").and_then(|v| v.as_i64()).map(|i| i as u16),
+                    session_id: payload.get("session_id").unwrap_or(&"unknown".to_string())
+                        .to_string(),
+                    stream_id: payload.get("stream_id").unwrap_or(&"stream-1".to_string())
+                        .to_string(),
+                }
+            }
+            _ => WebRtcMessage::IceCandidate {
+                candidate: String::new(),
+                sdp_mid: None,
+                sdp_mline_index: 0,
+                session_id: "unknown".to_string(),
+                stream_id: "stream-1".to_string(),
+            },
+        }
+    }
+
+    pub fn to_protocol_message(&self) -> simbridge_shared::protocol::Message {
+        match self {
+            WebRtcMessage::Offer { sdp, session_id, stream_id } => {
+                let mut payload = serde_json::Map::new();
+                payload.insert("type".to_string(), serde_json::Value::String("offer".to_string()));
+                payload.insert("sdp".to_string(), serde_json::Value::String(sdp.clone()));
+                payload.insert("session_id".to_string(), serde_json::Value::String(session_id.clone()));
+                payload.insert("stream_id".to_string(), serde_json::Value::String(stream_id.clone()));
+
+                simbridge_shared::protocol::Message {
+                    message_type: simbridge_shared::protocol::MessageType::WebrtcOffer,
+                    version: 1,
+                    timestamp: chrono::Utc::now(),
+                    requestId: None,
+                    payload,
+                }
+            }
+            WebRtcMessage::Answer { sdp, session_id, stream_id } => {
+                let mut payload = serde_json::Map::new();
+                payload.insert("type".to_string(), serde_json::Value::String("answer".to_string()));
+                payload.insert("sdp".to_string(), serde_json::Value::String(sdp.clone()));
+                payload.insert("session_id".to_string(), serde_json::Value::String(session_id.clone()));
+                payload.insert("stream_id".to_string(), serde_json::Value::String(stream_id.clone()));
+
+                simbridge_shared::protocol::Message {
+                    message_type: simbridge_shared::protocol::MessageType::WebrtcAnswer,
+                    version: 1,
+                    timestamp: chrono::Utc::now(),
+                    requestId: None,
+                    payload,
+                }
+            }
+            WebRtcMessage::IceCandidate { candidate, sdp_mid, sdp_mline_index, session_id, stream_id } => {
+                let mut payload = serde_json::Map::new();
+                payload.insert("type".to_string(), serde_json::Value::String("ice_candidate".to_string()));
+                payload.insert("candidate".to_string(), serde_json::Value::String(candidate.clone()));
+                if let Some(mid) = sdp_mid {
+                    payload.insert("sdp_mid".to_string(), serde_json::Value::String(mid.clone()));
+                }
+                payload.insert("sdp_mline_index".to_string(), serde_json::Value::Number((*sdp_mline_index).into()));
+                payload.insert("session_id".to_string(), serde_json::Value::String(session_id.clone()));
+                payload.insert("stream_id".to_string(), serde_json::Value::String(stream_id.clone()));
+
+                simbridge_shared::protocol::Message {
+                    message_type: simbridge_shared::protocol::MessageType::WebrtcIceCandidate,
+                    version: 1,
+                    timestamp: chrono::Utc::now(),
+                    requestId: None,
+                    payload,
+                }
+            }
+        }
+    }
+}
+
 /// Create REST API router
 pub fn create_router() -> Router {
     Router::new()
+        // Health and simulator endpoints
         .route("/health", get(health_check))
         .route("/api/v1/simulators", get(list_simulators))
         .route("/api/v1/sessions", get(list_sessions))
         .route("/api/v1/sessions", post(create_session))
         .route("/api/v1/sessions/:id", delete(delete_session))
+        
+        // WebRTC-specific endpoints
+        .route("/api/v1/webrtc/sessions", post(create_webrtc_session))
+        .route("/api/v1/webrtc/sessions/:id", get(get_webrtc_session))
+        .route("/api/v1/webrtc/sessions/:id", delete(delete_webrtc_session))
+        .route("/api/v1/webrtc/sessions/:id/stats", get(get_webrtc_session_stats))
 }
 
 /// Health check endpoint
@@ -149,19 +312,99 @@ async fn create_session(
     })))
 }
 
-/// Delete a session
-async fn delete_session(
+/// Create WebRTC session endpoint
+async fn create_webrtc_session(
     State(state): State<RestServerState>,
-    Path(id): Path<String>,
+    Json(req): Json<CreateWebrtcSessionRequest>,
+) -> Result<Json<WebrtcSessionResponse>, StatusCode> {
+    info!("Creating WebRTC session for simulator {}", req.simulator_id);
+
+    // Get WebRTC manager from state
+    let webrtc_manager = match &state.webrtc_manager {
+        Some(manager) => manager.clone(),
+        None => return Err(StatusCode::ServiceUnavailable),
+    };
+
+    // Create the session in the signaling manager
+    let session_id = webrtc_manager.create_session(
+        req.simulator_id,
+        req.device_id,
+        req.stream_id,
+    ).await?;
+
+    Ok(Json(WebrtcSessionResponse {
+        session_id: session_id.to_string(),
+        simulator_id: req.simulator_id,
+        status: "waiting_for_offer".to_string(),
+    }))
+}
+
+/// Get WebRTC session info
+async fn get_webrtc_session(
+    State(state): State<RestServerState>,
+    Path(session_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
-    info!("Deleting session {}", id);
-    
-    // TODO: Delete actual session
-    let mut sessions = state.sessions.write().await;
-    sessions.retain(|s| s != &id);
-    
-    Ok(Json(serde_json::json!({
-        "status": "deleted",
-        "session_id": id
-    })))
+    info!("Getting WebRTC session: {}", session_id);
+
+    let webrtc_manager = match &state.webrtc_manager {
+        Some(manager) => manager.clone(),
+        None => return Err(StatusCode::ServiceUnavailable),
+    };
+
+    // Parse UUID and get session
+    if let Ok(uuid) = Uuid::parse_str(&session_id) {
+        if let Some(session) = webrtc_manager.get_session(uuid).await {
+            return Ok(Json(serde_json::json!({
+                "id": session.id.to_string(),
+                "simulator_id": session.simulator_id,
+                "device_id": session.device_id,
+                "stream_id": session.stream_id,
+                "state": format!("{:?}", session.session_state),
+                "connected_at": session.connected_at.map(|t| t.to_rfc3339()),
+                "created_at": session.created_at.to_rfc3339(),
+            })));
+        }
+    }
+
+    Err(StatusCode::NotFound)
+}
+
+/// Delete WebRTC session
+async fn delete_webrtc_session(
+    State(state): State<RestServerState>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    info!("Deleting WebRTC session: {}", session_id);
+
+    let webrtc_manager = match &state.webrtc_manager {
+        Some(manager) => manager.clone(),
+        None => return Err(StatusCode::ServiceUnavailable),
+    };
+
+    // Parse UUID and delete session
+    if let Ok(uuid) = Uuid::parse_str(&session_id) {
+        webrtc_manager.close_session(uuid).await?;
+        return Ok(Json(serde_json::json!({ "status": "deleted" })));
+    }
+
+    Err(StatusCode::BadRequest)
+}
+
+/// Get WebRTC session statistics
+async fn get_webrtc_session_stats(
+    State(state): State<RestServerState>,
+    Path(session_id): Path<String>,
+) -> Result<Json<WebRTCSessionStats>, StatusCode> {
+    info!("Getting WebRTC session stats: {}", session_id);
+
+    let webrtc_manager = match &state.webrtc_manager {
+        Some(manager) => manager.clone(),
+        None => return Err(StatusCode::ServiceUnavailable),
+    };
+
+    if let Some(stats) = webrtc_manager.get_session_stats(uuid::Uuid::parse_str(&session_id).unwrap()).await {
+        Ok(Json(stats))
+    } else {
+        Err(StatusCode::NotFound)
+    }
 }
