@@ -1,8 +1,9 @@
 // Complete WebRTC signaling and video streaming for SimBridge
 
 use std::collections::HashMap;
+use std::error::Error;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, broadcast};
 use uuid::Uuid;
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
@@ -78,8 +79,7 @@ pub struct WebRTCSignalingManager {
 
 /// WebSocket context for signaling channel
 struct WebSocketContext {
-    send_callback: tokio::sync::broadcast::Sender<WebRTCSignal>,
-    close_tx: tokio::sync::broadcast::Sender<(), String>,
+    send_callback: broadcast::Sender<WebRTCSignal>,
 }
 
 impl WebRTCSignalingManager {
@@ -349,12 +349,22 @@ impl FrameDeliverySystem {
 pub enum FrameDeliveryError {
     #[error("Stream not active: {0}")]
     StreamNotActive(String),
-    
+
     #[error("Channel closed")]
     ChannelClosed,
-    
+
     #[error("Send error: {0}")]
     SendError(#[from] tokio::sync::mpsc::error::SendError<Vec<u8>>),
+}
+
+impl std::fmt::Display for FrameDeliveryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FrameDeliveryError::StreamNotActive(id) => write!(f, "Stream not active: {}", id),
+            FrameDeliveryError::ChannelClosed => write!(f, "Channel closed"),
+            FrameDeliveryError::SendError(e) => write!(f, "Send error: {}", e),
+        }
+    }
 }
 
 /// WebRTC signaling handler for WebSocket connections

@@ -108,6 +108,9 @@ async fn main() -> anyhow::Result<()> {
     // Initialize WebRTC signaling manager
     let webrtc_manager = Arc::new(simbridge_server::streaming::webrtc::WebRTCSignalingManager::new());
     
+    // Initialize screen capture manager with target FPS (30)
+    let capture_manager = Arc::new(simbridge_server::streaming::ScreenCaptureManager::new(30));
+    
     // Update REST server state with WebRTC manager
     let rest_state = RestServerState::with_webrtc_manager(webrtc_manager.clone());
 

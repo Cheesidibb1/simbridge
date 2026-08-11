@@ -10,9 +10,9 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::info;
-use simbridge_shared::uuid::Uuid;
-use simbridge_server::streaming::webrtc::{WebRTCSignalingManager, WebRTCSignal, WebRTCSessionStats};
+use tracing::{info, error};
+use uuid::Uuid;
+use simbridge_server::streaming::webrtc::{WebRTCSignalingManager, WebRTCSessionStats, SignalingHandler};
 
 /// REST API server state
 #[derive(Clone)]
@@ -104,6 +104,15 @@ pub enum WebRtcMessage {
         session_id: String,
         stream_id: String,
     },
+}
+
+/// Signaling message request for REST API
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SignalingMessageRequest {
+    pub session_id: String,
+    pub stream_id: String,
+    #[serde(flatten)]
+    pub message: WebRtcMessage,
 }
 
 impl WebRtcMessage {
@@ -216,12 +225,15 @@ pub fn create_router() -> Router {
         .route("/api/v1/sessions", get(list_sessions))
         .route("/api/v1/sessions", post(create_session))
         .route("/api/v1/sessions/:id", delete(delete_session))
-        
-        // WebRTC-specific endpoints
+
+        // WebRTC session management
         .route("/api/v1/webrtc/sessions", post(create_webrtc_session))
         .route("/api/v1/webrtc/sessions/:id", get(get_webrtc_session))
         .route("/api/v1/webrtc/sessions/:id", delete(delete_webrtc_session))
         .route("/api/v1/webrtc/sessions/:id/stats", get(get_webrtc_session_stats))
+
+        // WebRTC signaling message handling
+        .route("/api/v1/webrtc/signaling", post(handle_signaling_message))
 }
 
 /// Health check endpoint
@@ -300,13 +312,15 @@ async fn create_session(
     Json(req): Json<CreateSessionRequest>,
 ) -> Result<Json<serde_json::Value>, StatusCode> {
     info!("Creating session for simulator {}", req.simulator_id);
-    
-    // TODO: Create actual session
+
+    // Generate a new UUID for the session
+    let session_id = Uuid::new_v4();
+
     let mut sessions = state.sessions.write().await;
-    sessions.push(req.simulator_id.clone());
-    
+    sessions.push(session_id.to_string());
+
     Ok(Json(serde_json::json!({
-        "session_id": "new-session-id",
+        "session_id": session_id.to_string(),
         "simulator_id": req.simulator_id,
         "status": "active"
     })))
@@ -352,21 +366,40 @@ async fn get_webrtc_session(
     };
 
     // Parse UUID and get session
-    if let Ok(uuid) = Uuid::parse_str(&session_id) {
-        if let Some(session) = webrtc_manager.get_session(uuid).await {
-            return Ok(Json(serde_json::json!({
-                "id": session.id.to_string(),
-                "simulator_id": session.simulator_id,
-                "device_id": session.device_id,
-                "stream_id": session.stream_id,
-                "state": format!("{:?}", session.session_state),
-                "connected_at": session.connected_at.map(|t| t.to_rfc3339()),
-                "created_at": session.created_at.to_rfc3339(),
-            })));
+    match Uuid::parse_str(&session_id) {
+        Ok(uuid) => {
+            if let Some(session) = webrtc_manager.get_session(uuid).await {
+                return Ok(Json(serde_json::json!({
+                    "id": session.id.to_string(),
+                    "simulator_id": session.simulator_id,
+                    "device_id": session.device_id,
+                    "stream_id": session.stream_id,
+                    "state": format!("{:?}", session.session_state),
+                    "connected_at": session.connected_at.map(|t| t.to_rfc3339()),
+                    "created_at": session.created_at.to_rfc3339(),
+                })));
+            }
         }
+        Err(_) => return Err(StatusCode::BadRequest),
     }
 
     Err(StatusCode::NotFound)
+}
+
+/// Delete a session
+async fn delete_session(
+    State(state): State<RestServerState>,
+    Path(session_id): Path<String>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    info!("Deleting session: {}", session_id);
+
+    let mut sessions = state.sessions.write().await;
+
+    if sessions.remove(&session_id) {
+        Ok(Json(serde_json::json!({ "status": "deleted", "session_id": session_id })))
+    } else {
+        Err(StatusCode::NotFound)
+    }
 }
 
 /// Delete WebRTC session
@@ -402,9 +435,82 @@ async fn get_webrtc_session_stats(
         None => return Err(StatusCode::ServiceUnavailable),
     };
 
-    if let Some(stats) = webrtc_manager.get_session_stats(uuid::Uuid::parse_str(&session_id).unwrap()).await {
+    if let Some(stats) = webrtc_manager
+        .get_session_stats(Uuid::parse_str(&session_id).map_err(|_| StatusCode::BadRequest)?)
+        .await
+    {
         Ok(Json(stats))
     } else {
         Err(StatusCode::NotFound)
+    }
+}
+
+/// Handle incoming WebRTC signaling message (offer, answer, ICE candidate)
+async fn handle_signaling_message(
+    State(state): State<RestServerState>,
+    Json(request): Json<SignalingMessageRequest>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+    info!("Received signaling message for session: {}", request.session_id);
+
+    let webrtc_manager = match &state.webrtc_manager {
+        Some(manager) => manager.clone(),
+        None => return Err(StatusCode::ServiceUnavailable),
+    };
+
+    // Parse session UUID
+    let session_id = Uuid::parse_str(&request.session_id)
+        .map_err(|_| StatusCode::BadRequest)?;
+
+    match request.message {
+        WebRtcMessage::Offer { sdp, stream_id, .. } => {
+            // Handle offer and generate answer
+            match SignalingHandler::handle_offer(
+                webrtc_manager,
+                session_id,
+                stream_id,
+                sdp,
+            ).await {
+                Ok(answer_signal) => {
+                    if let WebRTCSignal::Answer { sdp: answer_sdp, .. } = answer_signal {
+                        Ok(Json(serde_json::json!({
+                            "type": "answer",
+                            "sdp": answer_sdp,
+                            "session_id": request.session_id
+                        })))
+                    } else {
+                        Err(StatusCode::InternalServerError)
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to handle offer: {}", e);
+                    Err(StatusCode::BadRequest)
+                }
+            }
+        }
+        WebRtcMessage::IceCandidate { candidate, sdp_mid, sdp_mline_index, .. } => {
+            // Add ICE candidate
+            match SignalingHandler::handle_ice_candidate(
+                webrtc_manager,
+                session_id,
+                request.stream_id,
+                candidate,
+                sdp_mid,
+                sdp_mline_index,
+            ).await {
+                Ok(()) => Ok(Json(serde_json::json!({
+                    "type": "ice_candidate",
+                    "status": "received",
+                    "session_id": request.session_id
+                }))),
+                Err(e) => {
+                    error!("Failed to handle ICE candidate: {}", e);
+                    Err(StatusCode::BadRequest)
+                }
+            }
+        }
+        WebRtcMessage::Answer { .. } => {
+            // For now, return not implemented - answer would come from browser via WebSocket
+            Err(StatusCode::NotImplemented)
+        }
     }
 }

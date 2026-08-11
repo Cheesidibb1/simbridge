@@ -1,7 +1,12 @@
+# Miscellaneous
+.vs
+
 # Rust
 /target/
 **/*.rs.bk
 Cargo.lock
+/shared/target/
+/server/target/
 
 # Flutter
 .dart_tool/

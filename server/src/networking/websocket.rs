@@ -10,7 +10,9 @@ use axum::{
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, error};
+use uuid::Uuid;
 use simbridge_shared::protocol::{Message as ProtocolMessage, serialize_message, deserialize_message};
+use uuid::Uuid;
 
 /// WebSocket server state
 #[derive(Clone)]
@@ -21,6 +23,12 @@ pub struct WebSocketServerState {
 
 impl WebSocketServerState {
     pub fn new() -> Self {
+        Self {
+            clients: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    pub fn with_webrtc_manager(webrtc_manager: Arc<simbridge_server::streaming::webrtc::WebRTCSignalingManager>) -> Self {
         Self {
             clients: Arc::new(RwLock::new(Vec::new())),
         }
@@ -57,15 +65,26 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
                         match deserialize_message(text.as_bytes()) {
                             Ok(protocol_msg) => {
                                 info!("Received message: {:?}", protocol_msg.message_type);
-                                
-                                // TODO: Route message to appropriate handler
-                                
-                                // Send response
-                                let response = ProtocolMessage::new(
-                                    simbridge_shared::protocol::MessageType::Pong,
-                                    serde_json::json!({"status": "ok"})
-                                );
-                                
+
+                                // Route based on message type
+                                let response = match protocol_msg.message_type {
+                                    simbridge_shared::protocol::MessageType::WebrtcOffer => {
+                                        // Handle WebRTC offer - forward to signaling handler
+                                        handle_webrtc_offer(&protocol_msg).await
+                                    }
+                                    simbridge_shared::protocol::MessageType::WebrtcIceCandidate => {
+                                        // Handle ICE candidate
+                                        handle_ice_candidate(&protocol_msg).await
+                                    }
+                                    _ => {
+                                        // Default response for other messages
+                                        ProtocolMessage::new(
+                                            simbridge_shared::protocol::MessageType::Pong,
+                                            serde_json::json!({"status": "ok"})
+                                        )
+                                    }
+                                };
+
                                 match serialize_message(&response) {
                                     Ok(serialized) => {
                                         if sender.send(Message::Text(serialized)).await.is_err() {
@@ -105,4 +124,55 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
     }
 
     info!("WebSocket client disconnected");
+}
+
+/// Handle WebRTC offer message
+async fn handle_webrtc_offer(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
+    // Extract SDP and session info from payload
+    let payload = &protocol_msg.payload;
+    let sdp = payload.get("sdp").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let session_id = payload.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let stream_id = payload.get("stream_id").and_then(|v| v.as_str()).unwrap_or("stream-1");
+
+    info!("Handling WebRTC offer for session: {}", session_id);
+
+    // In a real implementation, this would:
+    // 1. Parse the session UUID
+    // 2. Store the offer in the signaling manager
+    // 3. Generate an answer SDP
+    // 4. Return the answer to the client
+
+    ProtocolMessage::new(
+        simbridge_shared::protocol::MessageType::WebrtcAnswer,
+        serde_json::json!({
+            "session_id": session_id,
+            "stream_id": stream_id,
+            "sdp": sdp, // In production, this would be a generated answer
+            "type": "answer"
+        })
+    )
+}
+
+/// Handle ICE candidate message
+async fn handle_ice_candidate(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
+    let payload = &protocol_msg.payload;
+    let candidate = payload.get("candidate").and_then(|v| v.as_str()).unwrap_or("");
+    let session_id = payload.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let stream_id = payload.get("stream_id").and_then(|v| v.as_str()).unwrap_or("stream-1");
+
+    info!("Handling ICE candidate for session: {}", session_id);
+
+    // In a real implementation, this would:
+    // 1. Parse the session UUID
+    // 2. Add the candidate to the session's ICE candidates list
+
+    ProtocolMessage::new(
+        simbridge_shared::protocol::MessageType::WebrtcIceCandidate,
+        serde_json::json!({
+            "session_id": session_id,
+            "stream_id": stream_id,
+            "candidate": candidate,
+            "type": "ice_candidate"
+        })
+    )
 }
