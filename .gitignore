@@ -88,3 +88,5 @@ Desktop.ini
 tmp/
 temp/
 *.tmp
+
+./companion/web/
