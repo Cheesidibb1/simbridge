@@ -30,7 +30,10 @@ impl WebSocketClient {
         let serialized = serialize_message(message)
             .map_err(|e| WebSocketError::SerializationError(e.to_string()))?;
         
-        let ws_message = Message::Text(serialized);
+        let serialized_string = String::from_utf8(serialized)
+            .map_err(|e| WebSocketError::SerializationError(e.to_string()))?;
+        
+        let ws_message = Message::Text(serialized_string);
         
         let mut write = self.write.lock().await;
         write.send(ws_message)

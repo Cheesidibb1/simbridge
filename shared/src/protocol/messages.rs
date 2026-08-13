@@ -58,14 +58,11 @@ pub enum MessageType {
     GetRecordings,
     Ping,
 
-    // Server → Client messages
+    // Server → Client messages (unique names only)
     PairResponse,
     AuthResponse,
-    SimulatorList,
     ScreenFrame,
     Notification,
-    ClipboardSync,
-    FileTransfer,
     RecordingStatus,
     RecordingData,
     Pong,

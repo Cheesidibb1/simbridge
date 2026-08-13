@@ -24,7 +24,7 @@ class SimBridgeService {
 
   Future<void> connect(String serverUrl, String authToken) async {
     // Convert HTTP URL to WebSocket URL
-    final wsUrl = serverUrl.replaceFirst('http', 'ws') + '/ws';
+    final wsUrl = '${serverUrl.replaceFirst('http', 'ws')}/ws';
     await _wsClient.connect(wsUrl);
 
     // Listen for messages

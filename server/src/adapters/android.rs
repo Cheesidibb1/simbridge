@@ -3,13 +3,104 @@
 use async_trait::async_trait;
 use std::path::Path;
 use std::process::Command;
-use super::interface::{SimulatorAdapter, AdapterError, ScreenStream, SimulatorStatus};
+use super::interface::{SimulatorAdapter, AdapterError, ScreenStream, AdapterSimulatorStatus};
 use simbridge_shared::protocol::{
-    TouchEvent, Gesture, GpsLocation, DeviceButton, Notification,
+    TouchEventPayload, GesturePayload, GpsLocation, DeviceButton, Notification,
     StreamQuality, TransferDirection,
 };
 
+/// Android screen stream handle using ADB commands
+pub struct AndroidScreenStream {
+    device_id: String,
+    stream_id: String,
+    width: u32,
+    height: u32,
+    is_recording: bool,
+    recording_pid: Option<u32>,
+}
+
+impl AndroidScreenStream {
+    pub fn new(stream_id: String, device_id: String, width: u32, height: u32) -> Self {
+        Self {
+            stream_id,
+            device_id,
+            width,
+            height,
+            is_recording: false,
+            recording_pid: None,
+        }
+    }
+
+    /// Capture a single screenshot frame using adb screencap
+    pub fn capture_frame(&self) -> Result<Vec<u8>, AdapterError> {
+        // Use ADB to copy screenshot from device to server
+        let output = Command::new("adb")
+            .args(["-s", &self.device_id, "shell", "screencap", "/sdcard/screen.png"])
+            .output()
+            .map_err(|e| AdapterError::CommandFailed(format!("ADB screencap failed: {}", e)))?;
+
+        if !output.status.success() {
+            return Err(AdapterError::CommandFailed(
+                "Screenshot capture command failed on device".to_string()
+            ));
+        }
+
+        // Pull the screenshot file to local system
+        std::process::Command::new("adb")
+            .args(["-s", &self.device_id, "pull", "/sdcard/screen.png", "/tmp/android_screen.png"])
+            .output()
+            .map_err(|e| AdapterError::CommandFailed(format!("ADB pull failed: {}", e)))?;
+
+        // Read the screenshot file
+        std::fs::read("/tmp/android_screen.png")
+            .map_err(|e| AdapterError::FileNotFound(
+                "/tmp/android_screen.png".to_string()
+            ))
+    }
+
+    /// Start recording screen to video file
+    pub fn start_recording(&mut self) -> Result<(), AdapterError> {
+        if self.is_recording {
+            return Err(AdapterError::NotSupported);
+        }
+
+        let output = Command::new("adb")
+            .args(["-s", &self.device_id, "shell", "screenrecord", "/sdcard/android_recording.mp4"])
+            .output()
+            .map_err(|e| AdapterError::CommandFailed(format!("screenrecord failed: {}", e)))?;
+
+        if !output.status.success() {
+            return Err(AdapterError::CommandFailed(
+                format!("Screen recording failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )
+            ));
+        }
+
+        self.is_recording = true;
+        Ok(())
+    }
+
+    /// Stop recording and return video path
+    pub fn stop_recording(&mut self) -> Option<String> {
+        if !self.is_recording {
+            return None;
+        }
+
+        // Kill the screenrecord process
+        if let Some(pid) = self.recording_pid.take() {
+            let _ = Command::new("adb")
+                .args(["-s", &self.device_id, "shell", "kill", &pid.to_string()])
+                .output();
+        }
+
+        self.is_recording = false;
+        Some("/sdcard/android_recording.mp4".to_string())
+    }
+}
+
 /// Android Emulator adapter
+#[derive(Clone)]
 pub struct AndroidEmulatorAdapter {
     device_id: String,
     device_name: String,
@@ -95,102 +186,41 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
         &self.device_name
     }
 
-    /// Android screen stream handle using ADB commands
-    pub struct AndroidScreenStream {
-        device_id: String,
-        stream_id: String,
-        width: u32,
-        height: u32,
-        is_recording: bool,
-        recording_pid: Option<u32>,
+    async fn start_screenshot(&mut self) -> Result<Vec<u8>, AdapterError> {
+        // Use ADB to capture screenshot
+        let output = Command::new("adb")
+            .args(["-s", &self.device_id, "shell", "screencap", "/sdcard/screen.png"])
+            .output()
+            .map_err(|e| AdapterError::CommandFailed(format!("screencap failed: {}", e)))?;
+
+        if !output.status.success() {
+            return Err(AdapterError::CommandFailed(
+                format!("Screenshot command failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )
+            ));
+        }
+
+        // Pull the screenshot file to local system
+        let pull_output = Command::new("adb")
+            .args(["-s", &self.device_id, "pull", "/sdcard/screen.png", "/tmp/android_screen.png"])
+            .output()
+            .map_err(|e| AdapterError::CommandFailed(format!("ADB pull failed: {}", e)))?;
+
+        if !pull_output.status.success() {
+            return Err(AdapterError::CommandFailed(
+                format!("Pull command failed: {}",
+                    String::from_utf8_lossy(&pull_output.stderr)
+                )
+            ));
+        }
+
+        // Read the screenshot file
+        std::fs::read("/tmp/android_screen.png")
+            .map_err(|e| AdapterError::FileNotFound("/tmp/android_screen.png".to_string()))
     }
 
-    impl AndroidScreenStream {
-        pub fn new(stream_id: String, device_id: String, width: u32, height: u32) -> Self {
-            Self {
-                stream_id,
-                device_id,
-                width,
-                height,
-                is_recording: false,
-                recording_pid: None,
-            }
-        }
-
-        /// Capture a single screenshot frame using adb screencap
-        pub fn capture_frame(&self) -> Result<Vec<u8>, AdapterError> {
-            // Use ADB to copy screenshot from device to server
-            let output = Command::new("adb")
-                .args(["-s", &self.device_id, "shell", "screencap", "/sdcard/screen.png"])
-                .output()
-                .map_err(|e| AdapterError::CommandFailed(format!("ADB screencap failed: {}", e)))?;
-
-            if !output.status.success() {
-                return Err(AdapterError::CommandFailed(
-                    "Screenshot capture command failed on device".to_string()
-                ));
-            }
-
-            // Pull the screenshot file to local system
-            std::process::Command::new("adb")
-                .args(["-s", &self.device_id, "pull", "/sdcard/screen.png", "/tmp/android_screen.png"])
-                .output()
-                .map_err(|e| AdapterError::CommandFailed(format!("ADB pull failed: {}", e)))?;
-
-            // Read the PNG file
-            std::fs::read("/tmp/android_screen.png")
-                .map_err(|e| AdapterError::FileNotFound("/tmp/android_screen.png".to_string()))
-        }
-
-        /// Start screen recording using adb shell screenrecord
-        pub fn start_recording(&mut self) -> Result<(), AdapterError> {
-            if self.is_recording {
-                return Err(AdapterError::NotSupported);
-            }
-
-            // Start screenrecord command on device
-            let output = Command::new("adb")
-                .args(["-s", &self.device_id, "shell", "screenrecord", "/sdcard/screen.mp4"])
-                .output()
-                .map_err(|e| AdapterError::CommandFailed(format!("Screen record failed: {}", e)))?;
-
-            if !output.status.success() {
-                return Err(AdapterError::CommandFailed(
-                    "Screen recording command failed on device".to_string()
-                ));
-            }
-
-            self.is_recording = true;
-            Ok(())
-        }
-
-        /// Stop screen recording and pull the file
-        pub fn stop_recording(&mut self) -> Result<Vec<u8>, AdapterError> {
-            if !self.is_recording {
-                return Err(AdapterError::NotSupported);
-            }
-
-            // Kill the screenrecord process
-            Command::new("adb")
-                .args(["-s", &self.device_id, "shell", "pkill", "-9", "screenrecord"])
-                .output()
-                .map_err(|e| AdapterError::CommandFailed(format!("Kill record failed: {}", e)))?;
-
-            // Pull the video file
-            std::process::Command::new("adb")
-                .args(["-s", &self.device_id, "pull", "/sdcard/screen.mp4", "/tmp/android_screen.mp4"])
-                .output()
-                .map_err(|e| AdapterError::CommandFailed(format!("ADB pull video failed: {}", e)))?;
-
-            // Read the video file as bytes (for streaming or return path)
-            let data = std::fs::read("/tmp/android_screen.mp4")
-                .map_err(|e| AdapterError::FileNotFound("/tmp/android_screen.mp4".to_string()))?;
-
-            Ok(data)
-        }
-    }
-
-    async fn start_screen_stream(&mut self, quality: StreamQuality, fps: u32) -> Result<ScreenStream, AdapterError> {
+    async fn start_screen_stream(&mut self, _quality: StreamQuality, _fps: u32) -> Result<ScreenStream, AdapterError> {
         // Validate device is connected and running
         if !self.is_connected() {
             return Err(AdapterError::NotConnected);
@@ -221,7 +251,7 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
         Ok(())
     }
 
-    async fn send_touch_event(&mut self, event: TouchEvent) -> Result<(), AdapterError> {
+    async fn send_touch_event(&mut self, event: TouchEventPayload) -> Result<(), AdapterError> {
         for touch in &event.touches {
             let x = touch.x as i32;
             let y = touch.y as i32;
@@ -237,7 +267,7 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
         Ok(())
     }
 
-    async fn send_gesture(&mut self, _gesture: Gesture) -> Result<(), AdapterError> {
+    async fn send_gesture(&mut self, _gesture: GesturePayload) -> Result<(), AdapterError> {
         // TODO: Implement gestures using adb shell input
         Ok(())
     }
@@ -330,9 +360,9 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
         Ok(())
     }
 
-    async fn get_status(&mut self) -> Result<SimulatorStatus, AdapterError> {
+    async fn get_status(&mut self) -> Result<AdapterSimulatorStatus, AdapterError> {
         // TODO: Get actual emulator status
-        Ok(SimulatorStatus {
+        Ok(AdapterSimulatorStatus {
             is_running: true,
             current_app: None,
             battery_level: Some(100.0),

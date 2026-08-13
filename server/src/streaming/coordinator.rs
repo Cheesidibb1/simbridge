@@ -76,9 +76,9 @@ impl StreamCoordinator {
         
         Self {
             streams: Arc::new(RwLock::new(HashMap::new())),
-            encoder: VideoEncoder::new(simbridge_shared::streaming::VideoEncoderConfig {
-                codec: simbridge_shared::streaming::VideoCodec::H264,
-                quality: quality.into(),
+            encoder: VideoEncoder::new(crate::streaming::encoder::VideoEncoderConfig {
+                codec: crate::streaming::encoder::VideoCodec::H264,
+                quality: crate::streaming::encoder::EncoderQuality::from(quality),
                 width: None,
                 height: None,
                 fps,
@@ -159,11 +159,11 @@ impl StreamCoordinator {
         if let Some(mut info) = streams.remove(&stream_id) {
             info.ended_at = Some(Utc::now());
             
-            // Calculate duration in seconds
-            if let Some(started) = info.started_at {
-                let now = Utc::now();
-                info.frames_per_second = info.frames_count as f64 / (now - started).num_seconds() as f64;
-            }
+            // Calculate duration in seconds (commented out - frames_per_second not in struct)
+            // if let Some(started) = info.started_at {
+            //     let now = Utc::now();
+            //     info.frames_per_second = info.frames_count as f64 / (now - started).num_seconds() as f64;
+            // }
             
             Ok(Some(info))
         } else {
@@ -221,21 +221,17 @@ impl StreamCoordinator {
         let streams = self.streams.read().await;
         
         if let Some(stream) = streams.get(&stream_id) {
-            let duration_seconds = if let Some(started) = stream.started_at {
-                if let Some(ended) = stream.ended_at {
-                    (ended - started).num_seconds() as f64
-                } else {
-                    (Utc::now() - started).num_seconds() as f64
-                }
+            let duration_seconds = if let Some(ended) = stream.ended_at {
+                ended.signed_duration_since(stream.started_at).num_seconds() as f64
             } else {
-                0.0
+                Utc::now().signed_duration_since(stream.started_at).num_seconds() as f64
             };
 
             Some(StreamStats {
                 frames_count: stream.frames_count,
                 bytes_transferred: stream.bytes_transferred,
                 bitrate_kbps: if duration_seconds > 0.0 {
-                    (stream.bytes_transferred * 8.0 / (duration_seconds * 1024.0)) as u64
+                    ((stream.bytes_transferred as f64) * 8.0 / (duration_seconds * 1024.0)) as u64
                 } else {
                     0
                 },

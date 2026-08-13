@@ -24,7 +24,7 @@ impl SessionReplayer {
             .map_err(|e| ReplayError::SerializationError(e.to_string()))?;
         
         Ok(Recording {
-            events,
+            events: events.clone(),
             duration: self.calculate_duration(&events),
         })
     }

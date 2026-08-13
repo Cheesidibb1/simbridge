@@ -1,7 +1,7 @@
 // Serialization utilities for protocol messages
 
 use serde::{Deserialize, Serialize};
-use std::io::{self, Read, Write};
+use std::io::{self, Read};
 use base64::{Engine as _, engine::general_purpose};
 use crate::protocol::Message;
 

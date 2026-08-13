@@ -41,6 +41,17 @@ impl From<String> for EncoderQuality {
     }
 }
 
+impl From<simbridge_shared::protocol::StreamQuality> for EncoderQuality {
+    fn from(quality: simbridge_shared::protocol::StreamQuality) -> Self {
+        match quality {
+            simbridge_shared::protocol::StreamQuality::Low => EncoderQuality::Low,
+            simbridge_shared::protocol::StreamQuality::Medium => EncoderQuality::Medium,
+            simbridge_shared::protocol::StreamQuality::High => EncoderQuality::High,
+            simbridge_shared::protocol::StreamQuality::Ultra => EncoderQuality::Ultra,
+        }
+    }
+}
+
 /// Video encoder configuration
 #[derive(Debug, Clone)]
 pub struct VideoEncoderConfig {
@@ -84,30 +95,28 @@ impl VideoEncoder {
         use image::{ImageFormat, DynamicImage};
 
         // Decode PNG
-        let img = DynamicImage::from_buffer(
-            &png_data[..],
-            &mut Cursor::new(png_data.to_vec())
-        ).map_err(|e| EncoderError::InvalidFrameData(format!("PNG decode failed: {}", e)))?;
+        let img = image::load_from_memory(png_data)
+            .map_err(|e| EncoderError::EncodingFailed(format!("PNG decode failed: {}", e)))?;
 
         // Convert to JPEG
-        let jpeg_data = img.tojpeg().ok();
-        
-        if let Some(data) = jpeg_data {
-            Ok(data)
-        } else {
-            Err(EncoderError::InvalidFrameData("JPEG conversion failed".to_string()))
-        }
+        let mut jpeg_data = Vec::new();
+        let mut cursor = Cursor::new(&mut jpeg_data);
+        img.write_to(&mut cursor, ImageFormat::Jpeg)
+            .map_err(|e| EncoderError::EncodingFailed(format!("JPEG conversion failed: {}", e)))?;
+
+        Ok(jpeg_data)
     }
 
     /// Encode PNG to H.264 keyframe (requires FFmpeg)
     pub async fn encode_png_to_h264(&self, png_data: &[u8]) -> Result<Vec<u8>, EncoderError> {
         // For now, return PNG as-is with a frame marker
         // In production, use ffmpeg to re-encode
-        let encoded = vec![
+        let mut encoded = vec![
             0x00, 0x00, 0x00, 0x01,  // Frame header
             0x68, 0x26, 0x34,         // "h264" marker
-            u32::len(png_data),       // Data length (u32)
         ];
+        encoded.extend_from_slice(&(png_data.len() as u32).to_be_bytes());
+        encoded.extend_from_slice(png_data);
         
         Ok(encoded)
     }
@@ -172,11 +181,12 @@ impl FfmpegEncoder {
 
     /// Convert video file to PNG frames using ffmpeg
     pub fn video_to_png_frames(video_path: &str, output_dir: &str) -> Result<(), EncoderError> {
+        let output_pattern = format!("{}/frame_%04d.png", output_dir);
         let status = Command::new("ffmpeg")
             .args([
                 "-i", video_path,
-                "-vf", format!("fps=30"),
-                format!("{}/frame_%04d.png", output_dir),
+                "-vf", "fps=30",
+                &output_pattern,
             ])
             .status();
 
@@ -187,14 +197,19 @@ impl FfmpegEncoder {
     }
 
     /// Extract frames from a PNG stream with compression
-    pub fn stream_png_frames(&self, mut png_bytes: Vec<u8>) -> Result<Vec<u8>, EncoderError> {
+    pub fn stream_png_frames(&self, png_bytes: Vec<u8>) -> Result<Vec<u8>, EncoderError> {
         // Compress PNG data for transmission (simple gzip)
-        let compressed = flate2::write::GzEncoder::new(
-            &mut std::io::Cursor::new(vec![]),
-            flate2::Compression::default(),
-        );
+        let mut binding = std::io::Cursor::new(vec![]);
+        {
+            let mut compressed = flate2::write::GzEncoder::new(
+                &mut binding,
+                flate2::Compression::default(),
+            );
+            // Placeholder - would use actual compression in production
+        }
         
-        Ok(png_bytes) // Placeholder - would use actual compression in production
+        // Placeholder - would use actual compression in production
+        Ok(png_bytes)
     }
 }
 
@@ -207,8 +222,8 @@ pub enum EncoderError {
     #[error("Encoding failed: {0}")]
     EncodingFailed(String),
     
-    #[error("Invalid frame data")]
-    InvalidFrameData,
+    #[error("Invalid frame data: {0}")]
+    InvalidFrameData(String),
     
     #[error("FFmpeg not available. Install FFmpeg to use video encoding.\nTry: brew install ffmpeg (macOS) or apt-get install ffmpeg (Linux)")]
     FfmpegNotFound,

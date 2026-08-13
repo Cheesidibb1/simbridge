@@ -3,7 +3,7 @@
 use rand::Rng;
 use sha2::{Sha256, Digest};
 use hmac::{Hmac, Mac};
-use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, AeadCore, OsRng}};
+use aes_gcm::{Aes256Gcm, Key, Nonce, aead::{Aead, AeadCore, OsRng}, KeyInit as AeadKeyInit};
 use base64::{Engine as _, engine::general_purpose};
 use thiserror::Error;
 
@@ -54,7 +54,8 @@ impl Crypto {
 
     /// Compute HMAC-SHA256
     pub fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<String, CryptoError> {
-        let mut mac = HmacSha256::new_from_slice(key)
+        use hmac::Mac;
+        let mut mac = <HmacSha256 as Mac>::new_from_slice(key)
             .map_err(|_| CryptoError::InvalidKey)?;
         mac.update(data);
         let result = mac.finalize();
@@ -64,7 +65,7 @@ impl Crypto {
     /// Encrypt data using AES-256-GCM
     pub fn encrypt(key: &[u8], plaintext: &[u8]) -> Result<String, CryptoError> {
         let key = Key::<Aes256Gcm>::from_slice(key);
-        let cipher = Aes256Gcm::new(key);
+        let cipher = <Aes256Gcm as AeadKeyInit>::new(key);
         
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
         let ciphertext = cipher.encrypt(&nonce, plaintext)
@@ -78,7 +79,7 @@ impl Crypto {
     /// Decrypt data using AES-256-GCM
     pub fn decrypt(key: &[u8], ciphertext: &str) -> Result<Vec<u8>, CryptoError> {
         let key = Key::<Aes256Gcm>::from_slice(key);
-        let cipher = Aes256Gcm::new(key);
+        let cipher = <Aes256Gcm as AeadKeyInit>::new(key);
         
         let data = general_purpose::STANDARD.decode(ciphertext)
             .map_err(|e| CryptoError::Base64Error(e.to_string()))?;

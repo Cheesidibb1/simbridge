@@ -3,12 +3,13 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc};
-use tokio::time::{interval, Duration};
+use tokio::time::Duration;
 use tracing::{info, warn, error};
 use simbridge_shared::protocol::StreamQuality;
-use crate::streaming::webrtc::FrameDeliverySystem;
+use crate::streaming::encoder::VideoEncoder;
 
 /// Active screen capture stream information
+#[derive(Clone)]
 pub struct CaptureStreamInfo {
     pub simulator_id: String,
     pub stream_id: String,
@@ -90,6 +91,7 @@ impl ScreenCaptureManager {
         let frame_interval = Duration::from_millis(1000 / self.target_fps as u64);
 
         let webrtc_tx = self.webrtc_tx.clone();
+        let streams_arc = self.streams.clone();
 
         // Start async capture task
         tokio::spawn(async move {
@@ -99,11 +101,12 @@ impl ScreenCaptureManager {
                 // Capture frame and deliver (every frame_interval)
                 tokio::time::sleep(frame_interval).await;
 
+                let streams_ref = streams_arc.read().await;
                 if let Err(e) = capture_frame_and_deliver(
                     &simulator_id,
                     &stream_id,
                     quality,
-                    &streams,
+                    &streams_ref,
                     webrtc_tx.as_ref(),
                 ).await {
                     error!("Failed to capture frame: {}", e);
@@ -162,14 +165,13 @@ impl ScreenCaptureManager {
                 is_active: true,
                 duration_ms: now.duration_since(info.started_at).as_millis() as u64,
                 frame_count: info.frame_count,
-                avg_fps: if let Some(duration_sec) = now.duration_since(info.started_at).as_secs_f64() {
+                avg_fps: {
+                    let duration_sec = now.duration_since(info.started_at).as_secs_f64();
                     if duration_sec > 0.0 {
                         (info.frame_count as f64 / duration_sec).round() as u32
                     } else {
                         0
                     }
-                } else {
-                    0
                 },
             })
             .collect()
@@ -177,16 +179,16 @@ impl ScreenCaptureManager {
 
     /// Get encoder with configured quality
     fn get_encoder(&self, quality: StreamQuality) -> VideoEncoder {
-        let (quality_bytes, codec) = match quality {
-            StreamQuality::Low => ("low".to_string(), crate::streaming::encoder::VideoCodec::JPEG),
-            StreamQuality::Medium => ("medium".to_string(), crate::streaming::encoder::VideoCodec::JPEG),
-            StreamQuality::High => ("high".to_string(), crate::streaming::encoder::VideoCodec::H264),
-            StreamQuality::Ultra => ("ultra".to_string(), crate::streaming::encoder::VideoCodec::H264),
+        let codec = match quality {
+            StreamQuality::Low => crate::streaming::encoder::VideoCodec::JPEG,
+            StreamQuality::Medium => crate::streaming::encoder::VideoCodec::JPEG,
+            StreamQuality::High => crate::streaming::encoder::VideoCodec::H264,
+            StreamQuality::Ultra => crate::streaming::encoder::VideoCodec::H264,
         };
 
         VideoEncoder::new(crate::streaming::encoder::VideoEncoderConfig {
             codec,
-            quality: simbridge_shared::protocol::StreamQuality::from(quality).0,
+            quality: crate::streaming::encoder::EncoderQuality::from(quality),
             width: None,
             height: None,
             fps: self.target_fps,
@@ -291,4 +293,3 @@ async fn simulate_frame_capture() -> Result<Vec<u8>, String> {
     
     Ok(frame)
 }
-<EOF>

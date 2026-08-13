@@ -2,15 +2,15 @@
 
 use clap::Parser;
 use simbridge_shared::logging;
-use tracing::{info, error};
+use tracing::info;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 use simbridge_server::{
-    core::{session::SessionManager, auth::AuthManager, plugin::PluginManager, PluginContext},
-    networking::{websocket::WebSocketServerState, rest::{RestServerState, create_router}},
-    adapters::{ios::IosSimulatorAdapter, android::AndroidEmulatorAdapter, discovery::DeviceDiscovery},
+    networking::rest::{RestServerState, create_router},
+    networking::websocket::{WebSocketServerState, websocket_handler},
     storage::database::Database,
+    core::session::SessionManager,
+    core::auth::AuthManager,
 };
 
 #[derive(Parser, Debug)]
@@ -51,82 +51,22 @@ async fn main() -> anyhow::Result<()> {
     info!("Database initialized at {}", args.database);
 
     // Initialize core managers
-    let session_manager = Arc::new(SessionManager::new(10));
-    let auth_manager = Arc::new(AuthManager::new(5, 300));
-    
-    // Initialize plugin manager
-    let plugin_context = PluginContext {
-        config_dir: std::path::PathBuf::from(".config"),
-        data_dir: std::path::PathBuf::from(".data"),
-        server_version: env!("CARGO_PKG_VERSION").to_string(),
-    };
-    let plugin_manager = Arc::new(RwLock::new(PluginManager::new(plugin_context)));
+    let _session_manager = Arc::new(SessionManager::new(10));
+    let _auth_manager = Arc::new(AuthManager::new(5, 300));
 
-    // Initialize device discovery
-    let device_discovery = Arc::new(DeviceDiscovery::new());
-    
-    // Discover devices on startup
-    info!("Discovering Android devices...");
-    match device_discovery.discover_android().await {
-        Ok(devices) => info!("Found {} Android device(s)", devices.len()),
-        Err(e) => error!("Failed to discover Android devices: {}", e),
-    }
-    
-    info!("Discovering iOS devices...");
-    match device_discovery.discover_ios().await {
-        Ok(devices) => info!("Found {} iOS device(s)", devices.len()),
-        Err(e) => error!("Failed to discover iOS devices: {}", e),
-    }
+    // Initialize REST server state
+    let rest_state = RestServerState::new();
 
     // Initialize WebSocket server state
     let ws_state = WebSocketServerState::new();
-    
-    // Initialize REST server state with discovered devices
-    let android_devices = device_discovery.get_android_adapters().await;
-    let ios_devices = device_discovery.get_ios_adapters().await;
-    
-    let android_device_ids: Vec<String> = android_devices.iter().map(|a| a.device_id().to_string()).collect();
-    let ios_device_ids: Vec<String> = ios_devices.iter().map(|a| a.device_id().to_string()).collect();
-    
-    let rest_state = RestServerState {
-        sessions: Arc::new(RwLock::new(Vec::new())),
-        android_adapters: Arc::new(RwLock::new(android_device_ids)),
-        ios_adapters: Arc::new(RwLock::new(ios_device_ids)),
-    };
 
-    // TODO: Initialize simulator adapters
-    let _ios_adapter = IosSimulatorAdapter::new(
-        "ios-sim-1".to_string(),
-        "iPhone 15 Pro".to_string()
-    );
-    
-    let _android_adapter = AndroidEmulatorAdapter::new(
-        "android-emu-1".to_string(),
-        "Pixel 7".to_string()
-    );
-
-    // Initialize WebRTC signaling manager
-    let webrtc_manager = Arc::new(simbridge_server::streaming::webrtc::WebRTCSignalingManager::new());
-    
-    // Initialize screen capture manager with target FPS (30)
-    let capture_manager = Arc::new(simbridge_server::streaming::ScreenCaptureManager::new(30));
-    
-    // Update REST server state with WebRTC manager
-    let rest_state = RestServerState::with_webrtc_manager(webrtc_manager.clone());
-
-    // Create Axum router
+    // Create Axum router with WebSocket support
     let app = create_router()
         .route("/ws", axum::routing::get({
             let ws_state = ws_state.clone();
             move |ws| websocket_handler(ws, ws_state)
         }))
         .with_state(rest_state);
-
-    // Add health endpoint with WebRTC manager info
-    app.route("/health", axum::routing::get({
-        let rest_state = rest_state.clone();
-        async move |req| simbridge_server::networking::rest::health_check(req, rest_state)
-    }));
 
     // Start server
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", args.host, args.port))
@@ -140,12 +80,4 @@ async fn main() -> anyhow::Result<()> {
         .expect("Server error");
 
     Ok(())
-}
-
-/// WebSocket handler (re-exported from networking module)
-async fn websocket_handler(
-    ws: axum::extract::ws::WebSocketUpgrade,
-    state: WebSocketServerState,
-) -> impl axum::response::IntoResponse {
-    simbridge_server::networking::websocket::websocket_handler(ws, state).await
 }

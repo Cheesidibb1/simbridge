@@ -41,7 +41,7 @@ class GpsService {
       throw Exception('Location permission denied');
     }
 
-    final locationSettings = LocationSettings(
+    const locationSettings = LocationSettings(
       accuracy: LocationAccuracy.high,
       distanceFilter: 0,
     );

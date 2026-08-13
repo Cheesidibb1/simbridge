@@ -6,7 +6,7 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use simbridge_shared::{
-    models::{Session, SessionStats, StreamConfig},
+    models::{Session, SessionStats, SessionStreamConfig as StreamConfig},
     protocol::SessionStatus,
 };
 use thiserror::Error;

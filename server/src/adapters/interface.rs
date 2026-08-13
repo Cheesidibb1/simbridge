@@ -3,7 +3,7 @@
 use std::path::Path;
 use async_trait::async_trait;
 use simbridge_shared::protocol::{
-    TouchEvent, Gesture, GpsLocation, DeviceButton, Notification,
+    TouchEventPayload, GesturePayload, GpsLocation, DeviceButton, Notification,
     StreamQuality, TransferDirection,
 };
 use thiserror::Error;
@@ -62,11 +62,14 @@ pub trait SimulatorAdapter: Send + Sync {
     /// Stop screen streaming
     async fn stop_screen_stream(&mut self) -> Result<(), AdapterError>;
 
+    /// Start screenshot
+    async fn start_screenshot(&mut self) -> Result<Vec<u8>, AdapterError>;
+
     /// Send touch event to simulator
-    async fn send_touch_event(&mut self, event: TouchEvent) -> Result<(), AdapterError>;
+    async fn send_touch_event(&mut self, event: TouchEventPayload) -> Result<(), AdapterError>;
 
     /// Send gesture to simulator
-    async fn send_gesture(&mut self, gesture: Gesture) -> Result<(), AdapterError>;
+    async fn send_gesture(&mut self, gesture: GesturePayload) -> Result<(), AdapterError>;
 
     /// Set GPS location
     async fn set_location(&mut self, location: GpsLocation) -> Result<(), AdapterError>;
@@ -99,12 +102,12 @@ pub trait SimulatorAdapter: Send + Sync {
     async fn restart(&mut self) -> Result<(), AdapterError>;
 
     /// Get simulator status
-    async fn get_status(&mut self) -> Result<SimulatorStatus, AdapterError>;
+    async fn get_status(&mut self) -> Result<AdapterSimulatorStatus, AdapterError>;
 }
 
 /// Simulator status
 #[derive(Debug, Clone)]
-pub struct SimulatorStatus {
+pub struct AdapterSimulatorStatus {
     pub is_running: bool,
     pub current_app: Option<String>,
     pub battery_level: Option<f64>,

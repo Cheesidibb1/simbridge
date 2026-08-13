@@ -3,13 +3,80 @@
 use async_trait::async_trait;
 use std::path::Path;
 use std::process::Command;
-use super::interface::{SimulatorAdapter, AdapterError, ScreenStream, SimulatorStatus};
+use super::interface::{SimulatorAdapter, AdapterError, ScreenStream, AdapterSimulatorStatus};
 use simbridge_shared::protocol::{
-    TouchEvent, Gesture, GpsLocation, DeviceButton, Notification,
+    TouchEventPayload, GesturePayload, GpsLocation, DeviceButton, Notification,
     StreamQuality, TransferDirection,
 };
 
+/// Screen stream handle for iOS simulator
+pub struct IosScreenStream {
+    stream_id: String,
+    device_id: String,
+    width: u32,
+    height: u32,
+    quality: StreamQuality,
+    fps: u32,
+    is_recording: bool,
+    recording_path: Option<String>,
+}
+
+impl IosScreenStream {
+    pub fn new(
+        stream_id: String,
+        device_id: String,
+        width: u32,
+        height: u32,
+        quality: StreamQuality,
+        fps: u32,
+    ) -> Self {
+        Self {
+            stream_id,
+            device_id,
+            width,
+            height,
+            quality,
+            fps,
+            is_recording: false,
+            recording_path: None,
+        }
+    }
+
+    pub fn capture_frame(&self) -> Result<Vec<u8>, AdapterError> {
+        // For iOS, use simctl to capture a screenshot
+        let output = Command::new("xcrun")
+            .args(["simctl", "io", &self.device_id, "screenshot", "/tmp/ios_frame.png"])
+            .output()
+            .map_err(|e| AdapterError::CommandFailed(format!("screenshot failed: {}", e)))?;
+
+        if !output.status.success() {
+            return Err(AdapterError::CommandFailed("screenshot command failed".to_string()));
+        }
+
+        // Read the captured frame
+        let frame_data = std::fs::read("/tmp/ios_frame.png")
+            .map_err(|e| AdapterError::FileNotFound(format!("Failed to read frame: {}", e)))?;
+
+        Ok(frame_data)
+    }
+
+    pub fn start_recording(&mut self, path: &str) -> Result<(), AdapterError> {
+        self.recording_path = Some(path.to_string());
+        self.is_recording = true;
+        Ok(())
+    }
+
+    pub fn stop_recording(&mut self) -> Result<(), AdapterError> {
+        self.is_recording = false;
+        if let Some(path) = self.recording_path.take() {
+            std::fs::remove_file(&path).map_err(|e| AdapterError::FileNotFound(path))?;
+        }
+        Ok(())
+    }
+}
+
 /// iOS Device/Emulator adapter
+#[derive(Clone)]
 pub struct IosSimulatorAdapter {
     device_id: String,
     device_name: String,
@@ -17,6 +84,7 @@ pub struct IosSimulatorAdapter {
     is_physical_device: bool,
     simctl_path: String,
     idevice_path: String,
+    recording_path: Option<String>,
 }
 
 impl IosSimulatorAdapter {
@@ -31,6 +99,7 @@ impl IosSimulatorAdapter {
             is_physical_device,
             simctl_path: "xcrun simctl".to_string(),
             idevice_path: "idevice".to_string(),
+            recording_path: None,
         }
     }
 
@@ -135,97 +204,24 @@ impl SimulatorAdapter for IosSimulatorAdapter {
         &self.device_name
     }
 
-    /// Screen stream handle for iOS simulator
-    pub struct IosScreenStream {
-        stream_id: String,
-        device_id: String,
-        width: u32,
-        height: u32,
-        quality: StreamQuality,
-        fps: u32,
-        is_recording: bool,
-        recording_path: Option<String>,
-    }
+    async fn start_screenshot(&mut self) -> Result<Vec<u8>, AdapterError> {
+        let output = Command::new("xcrun")
+            .args(["simctl", "io", &self.device_id, "screenshot", "/tmp/simulator.png"])
+            .output()
+            .map_err(|e| AdapterError::CommandFailed(format!("screenshot failed: {}", e)))?;
 
-    impl IosScreenStream {
-        pub fn new(
-            stream_id: String,
-            device_id: String,
-            width: u32,
-            height: u32,
-            quality: StreamQuality,
-            fps: u32,
-        ) -> Self {
-            Self {
-                stream_id,
-                device_id,
-                width,
-                height,
-                quality,
-                fps,
-                is_recording: false,
-                recording_path: None,
-            }
+        if !output.status.success() {
+            return Err(AdapterError::CommandFailed(
+                format!("Screenshot command failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )
+            ));
         }
 
-        /// Capture a single screenshot frame
-        pub fn capture_frame(&self) -> Result<Vec<u8>, AdapterError> {
-            // Use simctl to capture screenshot
-            let output = Command::new("xcrun")
-                .args(["simctl", "io", &self.device_id.clone(), "screenshot", "/tmp/simulator.png"])
-                .output()
-                .map_err(|e| AdapterError::CommandFailed(format!("simctl screenshot failed: {}", e)))?;
-
-            if !output.status.success() {
-                return Err(AdapterError::CommandFailed(
-                    format!("Screenshot command failed: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    )
-                ));
-            }
-
-            // Read the PNG file
-            std::fs::read("/tmp/simulator.png")
-                .map_err(|e| AdapterError::FileNotFound(
-                    "/tmp/simulator.png".to_string()
-                ))
-        }
-
-        /// Start recording screen to video file
-        pub fn start_recording(&mut self) -> Result<(), AdapterError> {
-            if self.is_recording {
-                return Err(AdapterError::NotSupported);
-            }
-
-            // Use simctl with screencapture tool for iOS simulator
-            let output = Command::new("xcrun")
-                .args(["simctl", "io", &self.device_id, "screencapture", "/tmp/simulator.mp4"])
-                .output()
-                .map_err(|e| AdapterError::CommandFailed(format!("Recording failed: {}", e)))?;
-
-            if !output.status.success() {
-                return Err(AdapterError::CommandFailed(
-                    format!("Screen recording failed: {}",
-                        String::from_utf8_lossy(&output.stderr)
-                    )
-                ));
-            }
-
-            self.is_recording = true;
-            self.recording_path = Some("/tmp/simulator.mp4".to_string());
-            Ok(())
-        }
-
-        /// Stop recording and return video path
-        pub fn stop_recording(&mut self) -> Option<String> {
-            if !self.is_recording {
-                return None;
-            }
-
-            let path = self.recording_path.take();
-            self.is_recording = false;
-            path
-        }
+        std::fs::read("/tmp/simulator.png")
+            .map_err(|e| AdapterError::FileNotFound(
+                "/tmp/simulator.png".to_string()
+            ))
     }
 
     async fn start_screen_stream(&mut self, quality: StreamQuality, fps: u32) -> Result<ScreenStream, AdapterError> {
@@ -247,7 +243,7 @@ impl SimulatorAdapter for IosSimulatorAdapter {
         }
 
         // Determine screen size based on device type
-        let (width, height) = self.get_simulator_dimensions()?;
+        let (width, height) = (390, 844); // Default iPhone 15 Pro dimensions
 
         Ok(ScreenStream {
             id: format!("ios-stream-{}", uuid::Uuid::new_v4()),
@@ -264,21 +260,7 @@ impl SimulatorAdapter for IosSimulatorAdapter {
         Ok(())
     }
 
-    /// Get simulator screen dimensions
-    fn get_simulator_dimensions(&self) -> Result<(u32, u32), AdapterError> {
-        let output = Command::new("xcrun")
-            .args(["simctl", "spawn", &self.device_id, "true"])
-            .output()
-            .map_err(|e| AdapterError::CommandFailed(format!("Get dimensions failed: {}", e)))?;
-
-        // For iPhone 15 Pro, default to these dimensions
-        let width = 390;
-        let height = 844;
-        
-        Ok((width, height))
-    }
-
-    async fn send_touch_event(&mut self, event: TouchEvent) -> Result<(), AdapterError> {
+    async fn send_touch_event(&mut self, event: TouchEventPayload) -> Result<(), AdapterError> {
         if self.is_physical_device {
             // For physical devices, use idevicerestool or similar
             return Err(AdapterError::NotSupported);
@@ -293,7 +275,7 @@ impl SimulatorAdapter for IosSimulatorAdapter {
         Ok(())
     }
 
-    async fn send_gesture(&mut self, _gesture: Gesture) -> Result<(), AdapterError> {
+    async fn send_gesture(&mut self, _gesture: GesturePayload) -> Result<(), AdapterError> {
         // TODO: Implement gestures using simctl io
         Ok(())
     }
@@ -393,9 +375,9 @@ impl SimulatorAdapter for IosSimulatorAdapter {
         Ok(())
     }
 
-    async fn get_status(&mut self) -> Result<SimulatorStatus, AdapterError> {
+    async fn get_status(&mut self) -> Result<AdapterSimulatorStatus, AdapterError> {
         // TODO: Get actual simulator status
-        Ok(SimulatorStatus {
+        Ok(AdapterSimulatorStatus {
             is_running: true,
             current_app: None,
             battery_level: Some(100.0),

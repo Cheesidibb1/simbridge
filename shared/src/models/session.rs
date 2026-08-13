@@ -16,11 +16,11 @@ pub struct Session {
     pub connected_at: Option<DateTime<Utc>>,
     pub disconnected_at: Option<DateTime<Utc>>,
     pub last_activity: DateTime<Utc>,
-    pub stream_config: StreamConfig,
+    pub stream_config: SessionStreamConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StreamConfig {
+pub struct SessionStreamConfig {
     pub quality: StreamQuality,
     pub fps: u32,
     pub audio_enabled: bool,

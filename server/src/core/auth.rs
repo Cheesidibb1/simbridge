@@ -52,7 +52,8 @@ impl AuthManager {
     /// Complete pairing with code
     pub async fn complete_pairing(&self, code: &str) -> Result<Device, AuthError> {
         let mut pairing_manager = self.pairing_manager.write().await;
-        let session = pairing_manager.complete_session(code)?;
+        let session = pairing_manager.complete_session(code)
+            .map_err(|e| AuthError::PairingFailed(e.to_string()))?;
         
         let device = Device {
             id: session.device_id.clone(),
@@ -161,4 +162,7 @@ pub enum AuthError {
     
     #[error("Pairing session expired")]
     PairingSessionExpired,
+
+    #[error("Pairing failed: {0}")]
+    PairingFailed(String),
 }

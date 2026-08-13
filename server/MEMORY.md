@@ -1,0 +1,1 @@
+- [Server running](main-db) — Server started successfully on port 8080, health check returning {"status":"healthy","version":"0.1.0"}

@@ -24,7 +24,7 @@ class SimulatorScreen extends StatefulWidget {
 class _SimulatorScreenState extends State<SimulatorScreen> {
   WebRTCService? _webrtcService;
   MediaStream? _remoteStream;
-  RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
+  final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
   bool _isGpsStreaming = false;
 
   @override

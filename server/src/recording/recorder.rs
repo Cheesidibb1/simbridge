@@ -16,7 +16,7 @@ pub struct SessionRecorder {
     is_recording: Arc<RwLock<bool>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 struct RecordingEvent {
     timestamp: chrono::DateTime<chrono::Utc>,
     message_type: String,

@@ -1,0 +1,646 @@
+warning: unused imports: `Deserialize` and `Serialize`
+ --> C:\Users\ztech\simbridg\shared\src\protocol\serialization.rs:3:13
+  |
+3 | use serde::{Deserialize, Serialize};
+  |             ^^^^^^^^^^^  ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: unused import: `self`
+ --> C:\Users\ztech\simbridg\shared\src\protocol\serialization.rs:4:15
+  |
+4 | use std::io::{self, Read, Write};
+  |               ^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `uuid::Uuid`
+ --> C:\Users\ztech\simbridg\shared\src\models\device.rs:4:5
+  |
+4 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: ambiguous glob re-exports
+  --> C:\Users\ztech\simbridg\shared\src\models\mod.rs:10:9
+   |
+10 | pub use session::*;
+   |         ^^^^^^^^^^ the name `StreamConfig` in the type namespace is first re-exported here
+11 | pub use simulator::*;
+12 | pub use config::*;
+   |         --------- but the name `StreamConfig` in the type namespace is also re-exported here
+   |
+   = note: `#[warn(ambiguous_glob_reexports)]` on by default
+System.Management.Automation.RemoteException
+warning: unused import: `WebSocketStream`
+ --> C:\Users\ztech\simbridg\shared\src\networking\websocket.rs:3:57
+  |
+3 | use tokio_tungstenite::{tungstenite::protocol::Message, WebSocketStream};
+  |                                                         ^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `tokio::net::TcpStream`
+ --> C:\Users\ztech\simbridg\shared\src\networking\websocket.rs:4:5
+  |
+4 | use tokio::net::TcpStream;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `crate::models::Device`
+ --> C:\Users\ztech\simbridg\shared\src\auth\pairing.rs:7:5
+  |
+7 | use crate::models::Device;
+  |     ^^^^^^^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `Subscriber`
+ --> C:\Users\ztech\simbridg\shared\src\logging\mod.rs:3:22
+  |
+3 | use tracing::{Level, Subscriber};
+  |                      ^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: ambiguous glob re-exports
+  --> C:\Users\ztech\simbridg\shared\src\lib.rs:12:9
+   |
+12 | pub use protocol::*;
+   |         ^^^^^^^^^^^ the name `StreamConfig` in the type namespace is first re-exported here
+13 | pub use models::*;
+   |         --------- but the name `StreamConfig` in the type namespace is also re-exported here
+System.Management.Automation.RemoteException
+warning: ambiguous glob re-exports
+  --> C:\Users\ztech\simbridg\shared\src\lib.rs:12:9
+   |
+12 | pub use protocol::*;
+   |         ^^^^^^^^^^^ the name `StreamQuality` in the type namespace is first re-exported here
+13 | pub use models::*;
+   |         --------- but the name `StreamQuality` in the type namespace is also re-exported here
+System.Management.Automation.RemoteException
+warning: ambiguous glob re-exports
+  --> C:\Users\ztech\simbridg\shared\src\lib.rs:12:9
+   |
+12 | pub use protocol::*;
+   |         ^^^^^^^^^^^ the name `ScreenSize` in the type namespace is first re-exported here
+13 | pub use models::*;
+   |         --------- but the name `ScreenSize` in the type namespace is also re-exported here
+System.Management.Automation.RemoteException
+warning: ambiguous glob re-exports
+  --> C:\Users\ztech\simbridg\shared\src\lib.rs:12:9
+   |
+12 | pub use protocol::*;
+   |         ^^^^^^^^^^^ the name `DeviceType` in the type namespace is first re-exported here
+13 | pub use models::*;
+   |         --------- but the name `DeviceType` in the type namespace is also re-exported here
+System.Management.Automation.RemoteException
+warning: ambiguous glob re-exports
+  --> C:\Users\ztech\simbridg\shared\src\lib.rs:13:9
+   |
+13 | pub use models::*;
+   |         ^^^^^^^^^ the name `config` in the type namespace is first re-exported here
+...
+16 | pub use utils::*;
+   |         -------- but the name `config` in the type namespace is also re-exported here
+System.Management.Automation.RemoteException
+warning: unused import: `Write`
+ --> C:\Users\ztech\simbridg\shared\src\protocol\serialization.rs:4:27
+  |
+4 | use std::io::{self, Read, Write};
+  |                           ^^^^^
+System.Management.Automation.RemoteException
+warning: field `url` is never read
+  --> C:\Users\ztech\simbridg\shared\src\networking\websocket.rs:13:5
+   |
+12 | pub struct WebSocketClient {
+   |            --------------- field in this struct
+13 |     url: String,
+   |     ^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: `simbridge-shared` (lib) generated 15 warnings (run `cargo fix --lib -p simbridge-shared` to apply 7 suggestions)
+   Compiling simbridge-server v0.1.0 (C:\Users\ztech\simbridg\server)
+error: struct is not supported in `trait`s or `impl`s
+   --> src\adapters\ios.rs:140:5
+    |
+140 |     pub struct IosScreenStream {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider moving the struct out to a nearby module scope
+System.Management.Automation.RemoteException
+error: implementation is not supported in `trait`s or `impl`s
+   --> src\adapters\ios.rs:151:5
+    |
+151 |     impl IosScreenStream {
+    |     ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider moving the implementation out to a nearby module scope
+System.Management.Automation.RemoteException
+error: struct is not supported in `trait`s or `impl`s
+   --> src\adapters\android.rs:100:5
+    |
+100 |     pub struct AndroidScreenStream {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider moving the struct out to a nearby module scope
+System.Management.Automation.RemoteException
+error: implementation is not supported in `trait`s or `impl`s
+   --> src\adapters\android.rs:109:5
+    |
+109 |     impl AndroidScreenStream {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider moving the implementation out to a nearby module scope
+System.Management.Automation.RemoteException
+error: expected identifier, found `<`
+   --> src\streaming\screen_capture_manager.rs:294:1
+    |
+294 | <EOF>
+    | ^ expected identifier
+System.Management.Automation.RemoteException
+error: expected one of: `default`, `fn`, `const`, `type`
+   --> src\adapters\ios.rs:140:9
+    |
+140 |     pub struct IosScreenStream {
+    |         ^^^^^^
+System.Management.Automation.RemoteException
+error: expected one of: `default`, `fn`, `const`, `type`
+   --> src\adapters\android.rs:100:9
+    |
+100 |     pub struct AndroidScreenStream {
+    |         ^^^^^^
+System.Management.Automation.RemoteException
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+  --> src\storage\repository.rs:21:9
+   |
+21 | /         sqlx::query!(
+22 | |             "INSERT INTO devices (id, name, device_type, platform, os_version, paired_at, last_seen, is_trusted, public_key) 
+23 | |              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+24 | |             device.id,
+...  |
+32 | |             device.public_key
+33 | |         )
+   | |_________^
+   |
+   = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+  --> src\storage\repository.rs:43:19
+   |
+43 |           let row = sqlx::query!(
+   |  ___________________^
+44 | |             "SELECT id, name, device_type, platform, os_version, paired_at, last_seen, is_trusted, public_key 
+45 | |              FROM devices WHERE id = ?",
+46 | |             id
+47 | |         )
+   | |_________^
+   |
+   = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+  --> src\storage\repository.rs:72:20
+   |
+72 |           let rows = sqlx::query!(
+   |  ____________________^
+73 | |             "SELECT id, name, device_type, platform, os_version, paired_at, last_seen, is_trusted, public_key 
+74 | |              FROM devices"
+75 | |         )
+   | |_________^
+   |
+   = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+   --> src\storage\repository.rs:100:9
+    |
+100 | /         sqlx::query!(
+101 | |             "UPDATE devices SET name = ?, platform = ?, os_version = ?, last_seen = ?, is_trusted = ? 
+102 | |              WHERE id = ?",
+103 | |             device.name,
+...   |
+108 | |             device.id
+109 | |         )
+    | |_________^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+   --> src\storage\repository.rs:119:9
+    |
+119 |         sqlx::query!("DELETE FROM devices WHERE id = ?", id)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+   --> src\storage\repository.rs:140:9
+    |
+140 | /         sqlx::query!(
+141 | |             "INSERT INTO sessions (id, device_id, simulator_id, status, created_at, connected_at, disconnected_at, last_activity) 
+142 | |              VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+143 | |             session.id,
+...   |
+150 | |             session.last_activity
+151 | |         )
+    | |_________^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+   --> src\storage\repository.rs:161:19
+    |
+161 |           let row = sqlx::query!(
+    |  ___________________^
+162 | |             "SELECT id, device_id, simulator_id, status, created_at, connected_at, disconnected_at, last_activity 
+163 | |              FROM sessions WHERE id = ?",
+164 | |             id
+165 | |         )
+    | |_________^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+   --> src\storage\repository.rs:195:20
+    |
+195 |           let rows = sqlx::query!(
+    |  ____________________^
+196 | |             "SELECT id, device_id, simulator_id, status, created_at, connected_at, disconnected_at, last_activity 
+197 | |              FROM sessions"
+198 | |         )
+    | |_________^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+   --> src\storage\repository.rs:228:9
+    |
+228 | /         sqlx::query!(
+229 | |             "UPDATE sessions SET status = ?, disconnected_at = ?, last_activity = ? 
+230 | |              WHERE id = ?",
+231 | |             format!("{:?}", session.status),
+...   |
+234 | |             session.id
+235 | |         )
+    | |_________^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+   --> src\storage\repository.rs:245:9
+    |
+245 |         sqlx::query!("DELETE FROM sessions WHERE id = ?", id)
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: this error originates in the macro `$crate::sqlx_macros::expand_query` which comes from the expansion of the macro `sqlx::query` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error[E0432]: unresolved imports `simbridge_shared::protocol::TouchEvent`, `simbridge_shared::protocol::Gesture`
+ --> src\adapters\interface.rs:6:5
+  |
+6 |     TouchEvent, Gesture, GpsLocation, DeviceButton, Notification,
+  |     ^^^^^^^^^^  ^^^^^^^ no `Gesture` in `protocol`
+  |     |
+  |     no `TouchEvent` in `protocol`
+System.Management.Automation.RemoteException
+error[E0432]: unresolved imports `simbridge_shared::protocol::TouchEvent`, `simbridge_shared::protocol::Gesture`
+ --> src\adapters\ios.rs:8:5
+  |
+8 |     TouchEvent, Gesture, GpsLocation, DeviceButton, Notification,
+  |     ^^^^^^^^^^  ^^^^^^^ no `Gesture` in `protocol`
+  |     |
+  |     no `TouchEvent` in `protocol`
+System.Management.Automation.RemoteException
+error[E0433]: cannot find module or crate `futures_util` in this scope
+  --> src\networking\websocket.rs:10:5
+   |
+10 | use futures_util::stream::StreamExt;
+   |     ^^^^^^^^^^^^ use of unresolved module or unlinked crate `futures_util`
+   |
+   = help: if you wanted to use a crate named `futures_util`, use `cargo add futures_util` to add it to your `Cargo.toml`
+System.Management.Automation.RemoteException
+error[E0433]: cannot find module or crate `futures_util` in this scope
+  --> src\networking\websocket.rs:11:5
+   |
+11 | use futures_util::sink::SinkExt;
+   |     ^^^^^^^^^^^^ use of unresolved module or unlinked crate `futures_util`
+   |
+   = help: if you wanted to use a crate named `futures_util`, use `cargo add futures_util` to add it to your `Cargo.toml`
+System.Management.Automation.RemoteException
+error[E0432]: unresolved imports `simbridge_shared::protocol::TouchEvent`, `simbridge_shared::protocol::Gesture`
+ --> src\adapters\android.rs:8:5
+  |
+8 |     TouchEvent, Gesture, GpsLocation, DeviceButton, Notification,
+  |     ^^^^^^^^^^  ^^^^^^^ no `Gesture` in `protocol`
+  |     |
+  |     no `TouchEvent` in `protocol`
+System.Management.Automation.RemoteException
+warning: unused import: `DateTime`
+ --> src\core\session.rs:7:14
+  |
+7 | use chrono::{DateTime, Utc};
+  |              ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: unused import: `SessionStats`
+ --> src\core\session.rs:9:23
+  |
+9 |     models::{Session, SessionStats, session::StreamConfig as SessionStreamConfig},
+  |                       ^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused imports: `DeviceType` and `crypto::Crypto`
+ --> src\core\auth.rs:7:74
+  |
+7 |     auth::{token::TokenManager, pairing::{PairingError, PairingManager}, crypto::Crypto},
+  |                                                                          ^^^^^^^^^^^^^^
+8 |     models::{Device, DeviceType},
+  |                      ^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `Path`
+ --> src\core\plugin.rs:3:17
+  |
+3 | use std::path::{Path, PathBuf};
+  |                 ^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `uuid::Uuid`
+  --> src\networking\websocket.rs:15:5
+   |
+15 | use uuid::Uuid;
+   |     ^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `serde_json::Value as JsonValue`
+  --> src\networking\rest.rs:10:5
+   |
+10 | use serde_json::Value as JsonValue;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `std::path::Path`
+ --> src\adapters\ios.rs:4:5
+  |
+4 | use std::path::Path;
+  |     ^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused imports: `ScreenStream`, `SimulatorAdapter`, and `SimulatorStatus`
+ --> src\adapters\ios.rs:6:24
+  |
+6 | use super::interface::{SimulatorAdapter, AdapterError, ScreenStream, SimulatorStatus};
+  |                        ^^^^^^^^^^^^^^^^                ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused imports: `DeviceButton`, `GpsLocation`, `Notification`, `StreamQuality`, and `TransferDirection`
+ --> src\adapters\ios.rs:8:26
+  |
+8 |     TouchEvent, Gesture, GpsLocation, DeviceButton, Notification,
+  |                          ^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^
+9 |     StreamQuality, TransferDirection,
+  |     ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `std::path::Path`
+ --> src\adapters\android.rs:4:5
+  |
+4 | use std::path::Path;
+  |     ^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused imports: `ScreenStream`, `SimulatorAdapter`, and `SimulatorStatus`
+ --> src\adapters\android.rs:6:24
+  |
+6 | use super::interface::{SimulatorAdapter, AdapterError, ScreenStream, SimulatorStatus};
+  |                        ^^^^^^^^^^^^^^^^                ^^^^^^^^^^^^  ^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused imports: `DeviceButton`, `GpsLocation`, `Notification`, `StreamQuality`, and `TransferDirection`
+ --> src\adapters\android.rs:8:26
+  |
+8 |     TouchEvent, Gesture, GpsLocation, DeviceButton, Notification,
+  |                          ^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^
+9 |     StreamQuality, TransferDirection,
+  |     ^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `super::interface::SimulatorAdapter`
+ --> src\adapters\discovery.rs:6:5
+  |
+6 | use super::interface::SimulatorAdapter;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `std::io::Cursor`
+  --> src\streaming\encoder.rs:83:13
+   |
+83 |         use std::io::Cursor;
+   |             ^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused imports: `DynamicImage` and `ImageFormat`
+  --> src\streaming\encoder.rs:84:21
+   |
+84 |         use image::{ImageFormat, DynamicImage};
+   |                     ^^^^^^^^^^^  ^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `simbridge_shared::protocol::StreamQuality`
+  --> src\streaming\webrtc.rs:10:5
+   |
+10 | use simbridge_shared::protocol::StreamQuality;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `crate::streaming::encoder::VideoCodec`
+  --> src\streaming\webrtc.rs:11:5
+   |
+11 | use crate::streaming::encoder::VideoCodec;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `screen_capture_manager::*`
+  --> src\streaming\mod.rs:11:9
+   |
+11 | pub use screen_capture_manager::*;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+warning: unused import: `StreamQuality`
+ --> src\storage\repository.rs:5:49
+  |
+5 | use simbridge_shared::models::{Device, Session, StreamQuality};
+  |                                                 ^^^^^^^^^^^^^
+System.Management.Automation.RemoteException
+error[E0599]: no method named `split` found for struct `WebSocket` in the current scope
+    --> src\networking\websocket.rs:49:45
+     |
+  49 |     let (mut sender, mut receiver) = socket.split();
+     |                                             ^^^^^ method not found in `WebSocket`
+     |
+    ::: C:\Users\ztech\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\futures-util-0.3.33\src\stream\stream\mod.rs:1581:8
+     |
+1581 |     fn split<Item>(self) -> (SplitSink<Self, Item>, SplitStream<Self>)
+     |        ----- the method is available for `WebSocket` here
+     |
+     = help: items from traits can only be used if the trait is in scope
+help: trait `StreamExt` which provides `split` is implemented but not in scope; perhaps you want to import it
+     |
+   3 + use futures_util::stream::stream::StreamExt;
+     |
+System.Management.Automation.RemoteException
+warning: variable does not need to be mutable
+   --> src\streaming\webrtc.rs:323:13
+    |
+323 |         let mut senders = self.active_senders.write().await;
+    |             ----^^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+error[E0277]: the trait bound `fn(State<...>, ...) -> ... {get_webrtc_session_stats}: Handler<_, _>` is not satisfied
+    --> src\networking\rest.rs:228:57
+     |
+ 228 |         .route("/api/v1/webrtc/sessions/:id/stats", get(get_webrtc_session_stats))
+     |                                                     --- ^^^^^^^^^^^^^^^^^^^^^^^^ the trait `Handler<_, _>` is not implemented for fn item `fn(State<RestServerState>, ...) -> ... {get_webrtc_session_stats}`
+     |                                                     |
+     |                                                     required by a bound introduced by this call
+     |
+     = note: Consider using `#[axum::debug_handler]` to improve the error message
+help: the following other types implement trait `Handler<T, S>`
+    --> C:\Users\ztech\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-0.7.9\src\routing\method_routing.rs:1309:1
+     |
+1309 | / impl<S> Handler<(), S> for MethodRouter<S>
+1310 | | where
+1311 | |     S: Clone + 'static,
+     | |_______________________^ `MethodRouter<S>` implements `Handler<(), S>`
+     |
+    ::: C:\Users\ztech\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-0.7.9\src\handler\mod.rs:303:1
+     |
+ 303 | / impl<H, S, T, L> Handler<T, S> for Layered<L, H, T, S>
+ 304 | | where
+ 305 | |     L: Layer<HandlerService<H, T, S>> + Clone + Send + 'static,
+ 306 | |     H: Handler<T, S>,
+...    |
+ 310 | |     T: 'static,
+ 311 | |     S: 'static,
+     | |_______________^ `Layered<L, H, T, S>` implements `Handler<T, S>`
+note: required by a bound in `axum::routing::get`
+    --> C:\Users\ztech\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\axum-0.7.9\src\routing\method_routing.rs:166:16
+     |
+ 166 |             H: Handler<T, S>,
+     |                ^^^^^^^^^^^^^ required by this bound in `get`
+...
+ 439 | top_level_handler_fn!(get, GET);
+     | -------------------------------
+     | |                     |
+     | |                     required by a bound in this function
+     | in this macro invocation
+     = note: the full name for the type has been written to 'C:\Users\ztech\simbridg\server\target\debug\deps\simbridge_server-d5e63716fe7f82cc.long-type-18275159392447069155.txt'
+     = note: consider using `--verbose` to print the full type name to the console
+     = note: this error originates in the macro `top_level_handler_fn` (in Nightly builds, run with -Z macro-backtrace for more info)
+System.Management.Automation.RemoteException
+error[E0277]: the trait bound `EncoderQuality: From<simbridge_shared::protocol::StreamQuality>` is not satisfied
+  --> src\streaming\coordinator.rs:82:34
+   |
+82 |                 quality: quality.into(),
+   |                                  ^^^^ unsatisfied trait bound
+   |
+help: the trait `From<simbridge_shared::protocol::StreamQuality>` is not implemented for `EncoderQuality`
+      but trait `From<std::string::String>` is implemented for it
+  --> src\streaming\encoder.rs:33:1
+   |
+33 | impl From<String> for EncoderQuality {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   = help: for that trait implementation, expected `std::string::String`, found `simbridge_shared::protocol::StreamQuality`
+   = note: required for `simbridge_shared::protocol::StreamQuality` to implement `Into<EncoderQuality>`
+System.Management.Automation.RemoteException
+error[E0618]: expected function, found `EncoderError`
+   --> src\streaming\encoder.rs:88:26
+    |
+ 88 |             .map_err(|e| EncoderError::InvalidFrameData(format!("PNG decode failed: {}", e)))?;
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^-------------------------------------
+    |                          |
+    |                          call expression requires function
+...
+208 |     InvalidFrameData,
+    |     ---------------- `EncoderError::InvalidFrameData` defined here
+System.Management.Automation.RemoteException
+error[E0618]: expected function, found `EncoderError`
+   --> src\streaming\encoder.rs:96:17
+    |
+ 96 |             Err(EncoderError::InvalidFrameData("JPEG conversion failed".to_string()))
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^--------------------------------------
+    |                 |
+    |                 call expression requires function
+...
+208 |     InvalidFrameData,
+    |     ---------------- `EncoderError::InvalidFrameData` defined here
+System.Management.Automation.RemoteException
+error[E0308]: mismatched types
+   --> src\streaming\encoder.rs:175:24
+    |
+175 |                 "-vf", format!("fps=30"),
+    |                        ^^^^^^^^^^^^^^^^^ expected `&str`, found `String`
+System.Management.Automation.RemoteException
+error[E0308]: mismatched types
+   --> src\streaming\encoder.rs:176:17
+    |
+176 |                 format!("{}/frame_%04d.png", output_dir),
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `&str`, found `String`
+System.Management.Automation.RemoteException
+warning: unused variable: `webrtc_manager`
+  --> src\networking\websocket.rs:32:32
+   |
+32 |     pub fn with_webrtc_manager(webrtc_manager: Arc<crate::streaming::webrtc::WebRTCSignalingManager>) -> Self {
+   |                                ^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_webrtc_manager`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+System.Management.Automation.RemoteException
+warning: unused variable: `state`
+   --> src\networking\rest.rs:235:29
+    |
+235 | async fn health_check(State(state): State<RestServerState>) -> Json<HealthResponse> {
+    |                             ^^^^^ help: if this is intentional, prefix it with an underscore: `_state`
+System.Management.Automation.RemoteException
+warning: unused variable: `stream_id`
+   --> src\streaming\webrtc.rs:390:9
+    |
+390 |         stream_id: String,
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_stream_id`
+System.Management.Automation.RemoteException
+warning: unused variable: `output_path`
+  --> src\adapters\interface.rs:25:41
+   |
+25 |     async fn start_recording(&mut self, output_path: &str) -> Result<(), AdapterError> {
+   |                                         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_output_path`
+System.Management.Automation.RemoteException
+warning: variable does not need to be mutable
+   --> src\streaming\encoder.rs:187:37
+    |
+187 |     pub fn stream_png_frames(&self, mut png_bytes: Vec<u8>) -> Result<Vec<u8>, EncoderError> {
+    |                                     ----^^^^^^^^^
+    |                                     |
+    |                                     help: remove this `mut`
+System.Management.Automation.RemoteException
+error[E0716]: temporary value dropped while borrowed
+   --> src\streaming\encoder.rs:190:18
+    |
+190 |             &mut std::io::Cursor::new(vec![]),
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ creates a temporary value which is freed while still in use
+191 |             flate2::Compression::default(),
+192 |         );
+    |          - temporary value is freed at the end of this statement
+...
+195 |     }
+    |     - borrow might be used here, when `compressed` is dropped and runs the `Drop` code for type `flate2::write::GzEncoder`
+    |
+help: consider using a `let` binding to create a longer lived value
+    |
+189 ~         let mut binding = std::io::Cursor::new(vec![]);
+190 ~         let compressed = flate2::write::GzEncoder::new(
+191 ~             &mut binding,
+    |
+System.Management.Automation.RemoteException
+warning: unused variable: `compressed`
+   --> src\streaming\encoder.rs:189:13
+    |
+189 |         let compressed = flate2::write::GzEncoder::new(
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_compressed`
+System.Management.Automation.RemoteException
+error[E0382]: borrow of moved value: `events`
+  --> src\recording\replayer.rs:28:47
+   |
+23 |         let events: Vec<serde_json::Value> = serde_json::from_str(&content)
+   |             ------ move occurs because `events` has type `Vec<JsonValue>`, which does not implement the `Copy` trait
+...
+27 |             events,
+   |             ------ value moved here
+28 |             duration: self.calculate_duration(&events),
+   |                                               ^^^^^^^ value borrowed here after move
+   |
+   = note: borrow occurs due to deref coercion to `[JsonValue]`
+help: consider cloning the value if the performance cost is acceptable
+   |
+27 |             events: events.clone(),
+   |                   ++++++++++++++++
+System.Management.Automation.RemoteException
+Some errors have detailed explanations: E0277, E0308, E0382, E0432, E0433, E0599, E0618, E0716.
+For more information about an error, try `rustc --explain E0277`.
+warning: `simbridge-server` (lib) generated 26 warnings
+error: could not compile `simbridge-server` (lib) due to 31 previous errors; 26 warnings emitted

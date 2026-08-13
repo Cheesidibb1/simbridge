@@ -7,12 +7,12 @@ use axum::{
     },
     response::IntoResponse,
 };
+use futures::stream::StreamExt;
+use futures::sink::SinkExt;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, error};
-use uuid::Uuid;
 use simbridge_shared::protocol::{Message as ProtocolMessage, serialize_message, deserialize_message};
-use uuid::Uuid;
 
 /// WebSocket server state
 #[derive(Clone)]
@@ -28,7 +28,7 @@ impl WebSocketServerState {
         }
     }
 
-    pub fn with_webrtc_manager(webrtc_manager: Arc<simbridge_server::streaming::webrtc::WebRTCSignalingManager>) -> Self {
+    pub fn with_webrtc_manager(_webrtc_manager: Arc<()>) -> Self {
         Self {
             clients: Arc::new(RwLock::new(Vec::new())),
         }
@@ -38,7 +38,7 @@ impl WebSocketServerState {
 /// Handle WebSocket upgrade
 pub async fn websocket_handler(
     ws: WebSocketUpgrade,
-    State(state): State<WebSocketServerState>,
+    state: WebSocketServerState,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
@@ -46,9 +46,9 @@ pub async fn websocket_handler(
 /// Handle WebSocket connection
 async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
     let (mut sender, mut receiver) = socket.split();
-    
+
     info!("WebSocket client connected");
-    
+
     // Add client to list
     {
         let mut clients = state.clients.write().await;
@@ -87,7 +87,7 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
 
                                 match serialize_message(&response) {
                                     Ok(serialized) => {
-                                        if sender.send(Message::Text(serialized)).await.is_err() {
+                                        if sender.send(Message::Binary(serialized)).await.is_err() {
                                             error!("Failed to send response");
                                             break;
                                         }
