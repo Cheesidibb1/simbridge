@@ -19,6 +19,7 @@ class SettingsProvider extends ChangeNotifier {
   int streamFps;
   bool audioEnabled;
   String themeMode; // 'system' | 'light' | 'dark'
+  bool onboardingComplete;
 
   SettingsProvider._({
     required StorageService storage,
@@ -31,6 +32,7 @@ class SettingsProvider extends ChangeNotifier {
     required this.streamFps,
     required this.audioEnabled,
     required this.themeMode,
+    required this.onboardingComplete,
   }) : _storage = storage;
 
   static Future<SettingsProvider> load(StorageService storage) async {
@@ -50,6 +52,7 @@ class SettingsProvider extends ChangeNotifier {
       streamFps: storage.streamFps,
       audioEnabled: storage.audioEnabled,
       themeMode: storage.themeMode,
+      onboardingComplete: storage.onboardingComplete,
     );
   }
 
@@ -111,6 +114,12 @@ class SettingsProvider extends ChangeNotifier {
   Future<void> updateThemeMode(String mode) async {
     themeMode = mode;
     await _storage.setThemeMode(mode);
+    notifyListeners();
+  }
+
+  Future<void> completeOnboarding() async {
+    onboardingComplete = true;
+    await _storage.setOnboardingComplete(true);
     notifyListeners();
   }
 }

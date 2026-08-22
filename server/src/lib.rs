@@ -6,13 +6,17 @@ pub mod networking {
     pub mod websocket;
 }
 pub mod adapters;
-pub mod streaming;
-pub mod storage;
-pub mod recording;
 pub mod metrics;
+pub mod recording;
+pub mod storage;
+pub mod streaming;
 
-pub use core::{session::SessionManager, auth::AuthManager, plugin::{PluginManager, PluginContext}};
-pub use networking::rest::{RestServerState, create_router};
-pub use networking::websocket::{WebSocketServerState, websocket_handler};
-pub use adapters::{ios::IosSimulatorAdapter, android::AndroidEmulatorAdapter};
+pub use adapters::{android::AndroidEmulatorAdapter, ios::IosSimulatorAdapter};
+pub use core::{
+    auth::AuthManager,
+    plugin::{PluginContext, PluginManager},
+    session::SessionManager,
+};
+pub use networking::rest::{create_router, RestServerState};
+pub use networking::websocket::{websocket_handler, WebSocketServerState};
 pub use storage::database::Database;

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -139,26 +138,31 @@ class ConnectionProvider extends ChangeNotifier {
           latestFrame = base64Decode(payload.frameData);
         } catch (e) {
           _log.error('Failed to decode frame_data', e);
-          return;
+          break;
         }
         frameWidth = payload.width;
         frameHeight = payload.height;
         notifyListeners();
+        break;
       case WsMessageType.notification:
         final payload = NotificationPayload.fromJson(message.payload);
         notifications.insert(0, payload.notification);
         if (notifications.length > 50) notifications.removeLast();
         notifyListeners();
+        break;
       case WsMessageType.metricsUpdate:
         latestMetrics = MetricsUpdatePayload.fromJson(message.payload);
         notifyListeners();
+        break;
       case WsMessageType.recordingStatus:
         recordingStatus = RecordingStatusPayload.fromJson(message.payload);
         notifyListeners();
+        break;
       case WsMessageType.error:
         lastError = ErrorPayload.fromJson(message.payload);
         _log.warn('Server error ${lastError!.code.wire}: ${lastError!.message}');
         notifyListeners();
+        break;
       case WsMessageType.pong:
         break; // keepalive ack, nothing to surface
       case WsMessageType.sessionInfo:
@@ -247,6 +251,11 @@ class ConnectionProvider extends ChangeNotifier {
     ));
   }
 
+  void dismissNotification(SimNotification notification) {
+    notifications.remove(notification);
+    notifyListeners();
+  }
+
   void startRecording() {
     _ws?.send(WsMessage.outgoing(type: WsMessageType.startRecording));
   }
@@ -261,8 +270,10 @@ class ConnectionProvider extends ChangeNotifier {
 
   @override
   void dispose() {
-    unawaited(_msgSub?.cancel());
-    unawaited(_stateSub?.cancel());
+    final msgSub = _msgSub;
+    final stateSub = _stateSub;
+    if (msgSub != null) unawaited(msgSub.cancel());
+    if (stateSub != null) unawaited(stateSub.cancel());
     _ws?.dispose();
     super.dispose();
   }

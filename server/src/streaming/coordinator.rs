@@ -1,20 +1,20 @@
 // Screen streaming coordination for SimBridge
 
+use crate::streaming::encoder::VideoEncoder;
+use chrono::{DateTime, Utc};
+use simbridge_shared::protocol::StreamQuality;
 use std::collections::HashMap;
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use thiserror::Error;
-use chrono::{DateTime, Utc};
-use crate::streaming::encoder::VideoEncoder;
-use simbridge_shared::protocol::StreamQuality;
 
 /// Stream type enumeration
 #[derive(Debug, Clone)]
 pub enum StreamType {
-    Screenshot,     // Single frame capture
-    Continuous,     // Live streaming (WebRTC ready)
-    Recording,      // Local file recording
+    Screenshot, // Single frame capture
+    Continuous, // Live streaming (WebRTC ready)
+    Recording,  // Local file recording
 }
 
 /// Stream configuration
@@ -73,7 +73,7 @@ impl StreamCoordinator {
     pub fn with_encoder(encoder_config: simbridge_shared::protocol::StreamConfig) -> Self {
         let quality = encoder_config.quality;
         let fps = encoder_config.fps;
-        
+
         Self {
             streams: Arc::new(RwLock::new(HashMap::new())),
             encoder: VideoEncoder::new(crate::streaming::encoder::VideoEncoderConfig {
@@ -95,10 +95,11 @@ impl StreamCoordinator {
         fps: u32,
     ) -> Result<Uuid, StreamError> {
         let stream_id = Uuid::new_v4();
-        
+
         // Check if we already have an active stream for this session
         let existing_streams = self.streams.read().await;
-        let has_active_stream = existing_streams.values()
+        let has_active_stream = existing_streams
+            .values()
             .any(|s| s.session_id == session_id && !s.ended_at.is_some());
         drop(existing_streams);
 
@@ -123,14 +124,18 @@ impl StreamCoordinator {
 
         let mut streams = self.streams.write().await;
         streams.insert(stream_id, stream_info.clone());
-        
+
         Ok(stream_id)
     }
 
     /// Start a one-time screenshot capture
-    pub async fn start_screenshot(&self, session_id: Uuid, simulator_id: String) -> Result<Uuid, StreamError> {
+    pub async fn start_screenshot(
+        &self,
+        session_id: Uuid,
+        simulator_id: String,
+    ) -> Result<Uuid, StreamError> {
         let stream_id = Uuid::new_v4();
-        
+
         let stream_info = StreamInfo {
             id: stream_id,
             session_id,
@@ -148,23 +153,23 @@ impl StreamCoordinator {
 
         let mut streams = self.streams.write().await;
         streams.insert(stream_id, stream_info.clone());
-        
+
         Ok(stream_id)
     }
 
     /// Stop a stream and record statistics
     pub async fn stop_stream(&self, stream_id: Uuid) -> Result<Option<StreamInfo>, StreamError> {
         let mut streams = self.streams.write().await;
-        
+
         if let Some(mut info) = streams.remove(&stream_id) {
             info.ended_at = Some(Utc::now());
-            
+
             // Calculate duration in seconds (commented out - frames_per_second not in struct)
             // if let Some(started) = info.started_at {
             //     let now = Utc::now();
             //     info.frames_per_second = info.frames_count as f64 / (now - started).num_seconds() as f64;
             // }
-            
+
             Ok(Some(info))
         } else {
             Err(StreamError::NotFound)
@@ -180,7 +185,8 @@ impl StreamCoordinator {
     /// Get all active streams (not ended)
     pub async fn get_active_streams(&self) -> Vec<StreamInfo> {
         let streams = self.streams.read().await;
-        streams.values()
+        streams
+            .values()
             .filter(|s| s.ended_at.is_none())
             .cloned()
             .collect()
@@ -189,27 +195,32 @@ impl StreamCoordinator {
     /// Get all streams for a session
     pub async fn get_session_streams(&self, session_id: Uuid) -> Vec<StreamInfo> {
         let streams = self.streams.read().await;
-        streams.values()
+        streams
+            .values()
             .filter(|s| s.session_id == session_id)
             .cloned()
             .collect()
     }
 
     /// Update stream with new frame data
-    pub async fn update_stream_frame(&self, stream_id: Uuid, frame_data: Vec<u8>) -> Result<(), StreamError> {
+    pub async fn update_stream_frame(
+        &self,
+        stream_id: Uuid,
+        frame_data: Vec<u8>,
+    ) -> Result<(), StreamError> {
         let mut streams = self.streams.write().await;
-        
+
         if let Some(stream) = streams.get_mut(&stream_id) {
             stream.bytes_transferred += frame_data.len() as u64;
             stream.frames_count += 1;
-            
+
             // Update dimensions from first frame
             if stream.width.is_none() && !frame_data.is_empty() {
                 // In real implementation, would extract dimensions from frame metadata
                 stream.width = Some(390); // Default iOS width
                 stream.height = Some(844); // Default iOS height
             }
-            
+
             Ok(())
         } else {
             Err(StreamError::NotFound)
@@ -219,12 +230,14 @@ impl StreamCoordinator {
     /// Get statistics for a stream
     pub async fn get_stream_stats(&self, stream_id: Uuid) -> Option<StreamStats> {
         let streams = self.streams.read().await;
-        
+
         if let Some(stream) = streams.get(&stream_id) {
             let duration_seconds = if let Some(ended) = stream.ended_at {
                 ended.signed_duration_since(stream.started_at).num_seconds() as f64
             } else {
-                Utc::now().signed_duration_since(stream.started_at).num_seconds() as f64
+                Utc::now()
+                    .signed_duration_since(stream.started_at)
+                    .num_seconds() as f64
             };
 
             Some(StreamStats {
@@ -267,13 +280,13 @@ pub struct StreamStats {
 pub enum StreamError {
     #[error("Stream not found")]
     NotFound,
-    
+
     #[error("Active stream already exists for this session")]
     ActiveStreamExists,
-    
+
     #[error("Stream error: {0}")]
     StreamError(String),
-    
+
     #[error("Encoder error: {0}")]
     EncoderError(String),
 }
@@ -286,14 +299,17 @@ mod tests {
     #[tokio::test]
     async fn test_stream_creation() {
         let coordinator = StreamCoordinator::new();
-        
+
         let session_id = Uuid::new_v4();
-        let stream_id = coordinator.start_stream(
-            session_id,
-            "sim-1".to_string(),
-            simbridge_shared::protocol::StreamQuality::Medium,
-            30,
-        ).await.unwrap();
+        let stream_id = coordinator
+            .start_stream(
+                session_id,
+                "sim-1".to_string(),
+                simbridge_shared::protocol::StreamQuality::Medium,
+                30,
+            )
+            .await
+            .unwrap();
 
         assert!(coordinator.get_stream(stream_id).is_some());
     }
@@ -301,14 +317,17 @@ mod tests {
     #[tokio::test]
     async fn test_stream_stop() {
         let coordinator = StreamCoordinator::new();
-        
+
         let session_id = Uuid::new_v4();
-        let stream_id = coordinator.start_stream(
-            session_id,
-            "sim-1".to_string(),
-            simbridge_shared::protocol::StreamQuality::Medium,
-            30,
-        ).await.unwrap();
+        let stream_id = coordinator
+            .start_stream(
+                session_id,
+                "sim-1".to_string(),
+                simbridge_shared::protocol::StreamQuality::Medium,
+                30,
+            )
+            .await
+            .unwrap();
 
         let stats = coordinator.get_stream_stats(stream_id).await;
         assert!(stats.is_some());
@@ -317,18 +336,24 @@ mod tests {
     #[tokio::test]
     async fn test_frame_update() {
         let coordinator = StreamCoordinator::new();
-        
+
         let session_id = Uuid::new_v4();
-        let stream_id = coordinator.start_stream(
-            session_id,
-            "sim-1".to_string(),
-            simbridge_shared::protocol::StreamQuality::Medium,
-            30,
-        ).await.unwrap();
+        let stream_id = coordinator
+            .start_stream(
+                session_id,
+                "sim-1".to_string(),
+                simbridge_shared::protocol::StreamQuality::Medium,
+                30,
+            )
+            .await
+            .unwrap();
 
         // Update with test frame
         let frame_data = vec![1, 2, 3, 4, 5];
-        coordinator.update_stream_frame(stream_id, frame_data).await.unwrap();
+        coordinator
+            .update_stream_frame(stream_id, frame_data)
+            .await
+            .unwrap();
 
         // Should have transferred data
         let stats = coordinator.get_stream_stats(stream_id).await.unwrap();
@@ -338,12 +363,12 @@ mod tests {
     #[tokio::test]
     async fn test_screenshot_stream() {
         let coordinator = StreamCoordinator::new();
-        
+
         let session_id = Uuid::new_v4();
-        let stream_id = coordinator.start_screenshot(
-            session_id,
-            "sim-1".to_string(),
-        ).await.unwrap();
+        let stream_id = coordinator
+            .start_screenshot(session_id, "sim-1".to_string())
+            .await
+            .unwrap();
 
         let stream_info = coordinator.get_stream(stream_id).await.unwrap();
         assert_eq!(stream_info.stream_type, StreamType::Screenshot);

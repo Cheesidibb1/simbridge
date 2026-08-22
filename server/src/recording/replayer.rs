@@ -10,19 +10,17 @@ pub struct SessionReplayer {
 
 impl SessionReplayer {
     pub fn new(recording_path: PathBuf) -> Self {
-        Self {
-            recording_path,
-        }
+        Self { recording_path }
     }
 
     /// Load a recording
     pub fn load(&self) -> Result<Recording, ReplayError> {
         let content = std::fs::read_to_string(&self.recording_path)
             .map_err(|e| ReplayError::IoError(e.to_string()))?;
-        
+
         let events: Vec<serde_json::Value> = serde_json::from_str(&content)
             .map_err(|e| ReplayError::SerializationError(e.to_string()))?;
-        
+
         Ok(Recording {
             events: events.clone(),
             duration: self.calculate_duration(&events),
@@ -34,7 +32,7 @@ impl SessionReplayer {
         if events.len() < 2 {
             return 0;
         }
-        
+
         // TODO: Parse timestamps and calculate duration
         0
     }
@@ -52,10 +50,10 @@ pub struct Recording {
 pub enum ReplayError {
     #[error("IO error: {0}")]
     IoError(String),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(String),
-    
+
     #[error("Invalid recording format")]
     InvalidFormat,
 }

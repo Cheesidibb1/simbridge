@@ -1,5 +1,7 @@
 // WebSocket server for SimBridge
 
+use crate::adapters::android::{resolve_adb_path, AndroidEmulatorAdapter};
+use crate::adapters::interface::SimulatorAdapter;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -7,12 +9,16 @@ use axum::{
     },
     response::IntoResponse,
 };
-use futures::stream::StreamExt;
+use base64::Engine;
 use futures::sink::SinkExt;
+use futures::stream::StreamExt;
+use simbridge_shared::protocol::{
+    deserialize_message, serialize_message, FrameEncoding, GesturePayload,
+    Message as ProtocolMessage, MessageType, ScreenFramePayload, TouchEventPayload,
+};
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use tracing::{info, error};
-use simbridge_shared::protocol::{Message as ProtocolMessage, serialize_message, deserialize_message};
+use tokio::sync::{mpsc, RwLock};
+use tracing::{error, info};
 
 /// WebSocket server state
 #[derive(Clone)]
@@ -46,6 +52,8 @@ pub async fn websocket_handler(
 /// Handle WebSocket connection
 async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
     let (mut sender, mut receiver) = socket.split();
+    let (frame_sender, mut frame_receiver) = mpsc::unbounded_channel();
+    let mut screen_refresh_task: Option<tokio::task::JoinHandle<()>> = None;
 
     info!("WebSocket client connected");
 
@@ -55,9 +63,25 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
         clients.push("client".to_string());
     }
 
-    // Handle incoming messages
-    while let Some(result) = receiver.next().await {
-        match result {
+    // Handle incoming messages and frames produced by the screen refresh task.
+    loop {
+        tokio::select! {
+            Some(frame) = frame_receiver.recv() => {
+                match serialize_message(&frame) {
+                    Ok(serialized) => {
+                        if sender.send(Message::Binary(serialized)).await.is_err() {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        error!("Failed to serialize screen frame: {}", e);
+                        break;
+                    }
+                }
+            }
+            result = receiver.next() => {
+                let Some(result) = result else { break };
+                match result {
             Ok(msg) => {
                 match msg {
                     Message::Text(text) => {
@@ -68,6 +92,41 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
 
                                 // Route based on message type
                                 let response = match protocol_msg.message_type {
+                                    MessageType::ConnectSimulator => {
+                                        if let Some(task) = screen_refresh_task.take() {
+                                            task.abort();
+                                        }
+
+                                        let response = handle_connect_simulator(&protocol_msg).await;
+                                        if response.message_type == MessageType::ScreenFrame {
+                                            if let Some(simulator_id) = protocol_msg
+                                                .payload
+                                                .get("simulator_id")
+                                                .and_then(|value| value.as_str())
+                                            {
+                                                screen_refresh_task = Some(start_screen_refresh(
+                                                    simulator_id.to_string(),
+                                                    frame_sender.clone(),
+                                                ));
+                                            }
+                                        }
+                                        response
+                                    }
+                                    MessageType::DisconnectSimulator => {
+                                        if let Some(task) = screen_refresh_task.take() {
+                                            task.abort();
+                                        }
+                                        ProtocolMessage::new(
+                                            MessageType::Pong,
+                                            serde_json::json!({"status": "ok"}),
+                                        )
+                                    }
+                                    MessageType::TouchEvent => {
+                                        handle_touch_event(&protocol_msg).await
+                                    }
+                                    MessageType::Gesture => {
+                                        handle_gesture(&protocol_msg).await
+                                    }
                                     simbridge_shared::protocol::MessageType::WebrtcOffer => {
                                         // Handle WebRTC offer - forward to signaling handler
                                         handle_webrtc_offer(&protocol_msg).await
@@ -115,6 +174,12 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
                 break;
             }
         }
+            }
+        }
+    }
+
+    if let Some(task) = screen_refresh_task {
+        task.abort();
     }
 
     // Remove client from list
@@ -126,13 +191,159 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
     info!("WebSocket client disconnected");
 }
 
+async fn handle_touch_event(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
+    let payload = match serde_json::from_value::<TouchEventPayload>(protocol_msg.payload.clone()) {
+        Ok(payload) => payload,
+        Err(error) => return make_input_error(format!("Invalid touch event: {}", error)),
+    };
+    let simulator_id = payload.simulator_id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let mut adapter = AndroidEmulatorAdapter::new(simulator_id, String::new())
+            .with_adb_path(resolve_adb_path());
+        futures::executor::block_on(adapter.send_touch_event(payload))
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => ProtocolMessage::new(MessageType::Pong, serde_json::json!({"status": "ok"})),
+        Ok(Err(error)) => make_input_error(error.to_string()),
+        Err(error) => make_input_error(format!("Touch dispatch task failed: {}", error)),
+    }
+}
+
+async fn handle_gesture(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
+    let payload = match serde_json::from_value::<GesturePayload>(protocol_msg.payload.clone()) {
+        Ok(payload) => payload,
+        Err(error) => return make_input_error(format!("Invalid gesture: {}", error)),
+    };
+    let simulator_id = payload.simulator_id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let mut adapter = AndroidEmulatorAdapter::new(simulator_id, String::new())
+            .with_adb_path(resolve_adb_path());
+        futures::executor::block_on(adapter.send_gesture(payload))
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => ProtocolMessage::new(MessageType::Pong, serde_json::json!({"status": "ok"})),
+        Ok(Err(error)) => make_input_error(error.to_string()),
+        Err(error) => make_input_error(format!("Gesture dispatch task failed: {}", error)),
+    }
+}
+
+fn make_input_error(message: String) -> ProtocolMessage {
+    ProtocolMessage::new(
+        MessageType::Error,
+        serde_json::json!({"code": "input_dispatch_failed", "message": message}),
+    )
+}
+
+/// Capture one real frame when the companion completes the simulator handshake.
+/// A first frame is enough to unblock the mirror while the streaming path is
+/// brought up; failures are returned as protocol errors instead of leaving the
+/// client in an indefinite loading state.
+async fn handle_connect_simulator(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
+    let simulator_id = protocol_msg
+        .payload
+        .get("simulator_id")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    match capture_screen_frame(&simulator_id).await {
+        Ok(Ok(frame)) => make_screen_frame_message(simulator_id, frame),
+        Ok(Err(error)) => ProtocolMessage::new(
+            MessageType::Error,
+            serde_json::json!({
+                "code": "screen_capture_failed",
+                "message": error.to_string(),
+            }),
+        ),
+        Err(error) => ProtocolMessage::new(
+            MessageType::Error,
+            serde_json::json!({
+                "code": "screen_capture_failed",
+                "message": format!("Screen capture task failed: {}", error),
+            }),
+        ),
+    }
+}
+
+fn start_screen_refresh(
+    simulator_id: String,
+    frame_sender: mpsc::UnboundedSender<ProtocolMessage>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+
+        loop {
+            interval.tick().await;
+
+            match capture_screen_frame(&simulator_id).await {
+                Ok(Ok(frame)) => {
+                    if frame_sender
+                        .send(make_screen_frame_message(simulator_id.clone(), frame))
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Ok(Err(error)) => {
+                    error!("Screen refresh failed for {}: {}", simulator_id, error);
+                }
+                Err(error) => {
+                    error!("Screen refresh failed for {}: {}", simulator_id, error);
+                }
+            }
+        }
+    })
+}
+
+fn make_screen_frame_message(simulator_id: String, frame: Vec<u8>) -> ProtocolMessage {
+    let (width, height) = image::load_from_memory(&frame)
+        .map(|image| (image.width(), image.height()))
+        .unwrap_or((0, 0));
+    let payload = ScreenFramePayload {
+        simulator_id,
+        frame_data: base64::engine::general_purpose::STANDARD.encode(frame),
+        encoding: FrameEncoding::Png,
+        width,
+        height,
+        timestamp: chrono::Utc::now(),
+    };
+    ProtocolMessage::new(
+        MessageType::ScreenFrame,
+        serde_json::to_value(payload).unwrap(),
+    )
+}
+
+async fn capture_screen_frame(
+    simulator_id: &str,
+) -> Result<Result<Vec<u8>, crate::adapters::interface::AdapterError>, tokio::task::JoinError> {
+    let simulator_id = simulator_id.to_string();
+    tokio::task::spawn_blocking(move || {
+        let mut adapter = AndroidEmulatorAdapter::new(simulator_id, String::new())
+            .with_adb_path(resolve_adb_path());
+        futures::executor::block_on(adapter.start_screenshot())
+    })
+    .await
+}
+
 /// Handle WebRTC offer message
 async fn handle_webrtc_offer(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
     // Extract SDP and session info from payload
     let payload = &protocol_msg.payload;
-    let sdp = payload.get("sdp").and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let session_id = payload.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let stream_id = payload.get("stream_id").and_then(|v| v.as_str()).unwrap_or("stream-1");
+    let sdp = payload
+        .get("sdp")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let session_id = payload
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let stream_id = payload
+        .get("stream_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("stream-1");
 
     info!("Handling WebRTC offer for session: {}", session_id);
 
@@ -149,16 +360,25 @@ async fn handle_webrtc_offer(protocol_msg: &ProtocolMessage) -> ProtocolMessage 
             "stream_id": stream_id,
             "sdp": sdp, // In production, this would be a generated answer
             "type": "answer"
-        })
+        }),
     )
 }
 
 /// Handle ICE candidate message
 async fn handle_ice_candidate(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
     let payload = &protocol_msg.payload;
-    let candidate = payload.get("candidate").and_then(|v| v.as_str()).unwrap_or("");
-    let session_id = payload.get("session_id").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let stream_id = payload.get("stream_id").and_then(|v| v.as_str()).unwrap_or("stream-1");
+    let candidate = payload
+        .get("candidate")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let session_id = payload
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let stream_id = payload
+        .get("stream_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("stream-1");
 
     info!("Handling ICE candidate for session: {}", session_id);
 
@@ -173,6 +393,6 @@ async fn handle_ice_candidate(protocol_msg: &ProtocolMessage) -> ProtocolMessage
             "stream_id": stream_id,
             "candidate": candidate,
             "type": "ice_candidate"
-        })
+        }),
     )
 }

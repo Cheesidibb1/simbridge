@@ -1,11 +1,11 @@
 // Simulator adapter interface
 
-use std::path::Path;
 use async_trait::async_trait;
 use simbridge_shared::protocol::{
-    TouchEventPayload, GesturePayload, GpsLocation, DeviceButton, Notification,
-    StreamQuality, TransferDirection,
+    DeviceButton, GesturePayload, GpsLocation, Notification, StreamQuality, TouchEventPayload,
+    TransferDirection,
 };
+use std::path::Path;
 use thiserror::Error;
 
 /// Screen stream handle
@@ -57,7 +57,11 @@ pub trait SimulatorAdapter: Send + Sync {
     fn simulator_name(&self) -> &str;
 
     /// Start screen streaming
-    async fn start_screen_stream(&mut self, quality: StreamQuality, fps: u32) -> Result<ScreenStream, AdapterError>;
+    async fn start_screen_stream(
+        &mut self,
+        quality: StreamQuality,
+        fps: u32,
+    ) -> Result<ScreenStream, AdapterError>;
 
     /// Stop screen streaming
     async fn stop_screen_stream(&mut self) -> Result<(), AdapterError>;
@@ -96,7 +100,11 @@ pub trait SimulatorAdapter: Send + Sync {
     async fn set_clipboard(&mut self, content: &str) -> Result<(), AdapterError>;
 
     /// Transfer file
-    async fn transfer_file(&mut self, direction: TransferDirection, path: &Path) -> Result<Vec<u8>, AdapterError>;
+    async fn transfer_file(
+        &mut self,
+        direction: TransferDirection,
+        path: &Path,
+    ) -> Result<Vec<u8>, AdapterError>;
 
     /// Restart simulator
     async fn restart(&mut self) -> Result<(), AdapterError>;
@@ -120,28 +128,28 @@ pub struct AdapterSimulatorStatus {
 pub enum AdapterError {
     #[error("Not connected")]
     NotConnected,
-    
+
     #[error("Connection failed: {0}")]
     ConnectionFailed(String),
-    
+
     #[error("Command failed: {0}")]
     CommandFailed(String),
-    
+
     #[error("Not supported")]
     NotSupported,
-    
+
     #[error("Invalid parameter: {0}")]
     InvalidParameter(String),
-    
+
     #[error("File not found: {0}")]
     FileNotFound(String),
-    
+
     #[error("App not found: {0}")]
     AppNotFound(String),
-    
+
     #[error("Stream error: {0}")]
     StreamError(String),
-    
+
     #[error("Internal error: {0}")]
     InternalError(String),
 }

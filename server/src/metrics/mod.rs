@@ -1,9 +1,9 @@
 // Performance metrics collection
 
+use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::{DateTime, Utc};
 
 /// Metrics collector
 pub struct MetricsCollector {
@@ -35,12 +35,14 @@ impl MetricsCollector {
     /// Increment a counter metric
     pub async fn increment_counter(&self, name: &str, value: f64) {
         let mut metrics = self.metrics.write().await;
-        let entry = metrics.entry(name.to_string()).or_insert_with(|| MetricData {
-            name: name.to_string(),
-            value: 0.0,
-            timestamp: Utc::now(),
-            metric_type: MetricType::Counter,
-        });
+        let entry = metrics
+            .entry(name.to_string())
+            .or_insert_with(|| MetricData {
+                name: name.to_string(),
+                value: 0.0,
+                timestamp: Utc::now(),
+                metric_type: MetricType::Counter,
+            });
         entry.value += value;
         entry.timestamp = Utc::now();
     }
@@ -48,23 +50,28 @@ impl MetricsCollector {
     /// Set a gauge metric
     pub async fn set_gauge(&self, name: &str, value: f64) {
         let mut metrics = self.metrics.write().await;
-        metrics.insert(name.to_string(), MetricData {
-            name: name.to_string(),
-            value,
-            timestamp: Utc::now(),
-            metric_type: MetricType::Gauge,
-        });
+        metrics.insert(
+            name.to_string(),
+            MetricData {
+                name: name.to_string(),
+                value,
+                timestamp: Utc::now(),
+                metric_type: MetricType::Gauge,
+            },
+        );
     }
 
     /// Record a histogram value
     pub async fn record_histogram(&self, name: &str, value: f64) {
         let mut metrics = self.metrics.write().await;
-        let entry = metrics.entry(name.to_string()).or_insert_with(|| MetricData {
-            name: name.to_string(),
-            value: 0.0,
-            timestamp: Utc::now(),
-            metric_type: MetricType::Histogram,
-        });
+        let entry = metrics
+            .entry(name.to_string())
+            .or_insert_with(|| MetricData {
+                name: name.to_string(),
+                value: 0.0,
+                timestamp: Utc::now(),
+                metric_type: MetricType::Histogram,
+            });
         entry.value += value;
         entry.timestamp = Utc::now();
     }

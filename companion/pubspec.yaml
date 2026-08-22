@@ -1,0 +1,33 @@
+name: simbridge_client
+description: "SimBridge companion app — remote control and screen mirroring for iOS Simulators and Android Emulators over REST + WebSocket."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+  # Networking
+  http: ^1.2.2
+  web_socket_channel: ^2.4.5
+
+  # State management
+  provider: ^6.1.2
+
+  # Local persistence (server address, device id, stream prefs)
+  shared_preferences: ^2.3.2
+
+  # Device/session identifiers
+  uuid: ^4.5.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

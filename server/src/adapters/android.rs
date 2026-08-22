@@ -1,13 +1,13 @@
 // Android Emulator adapter using ADB
 
+use super::interface::{AdapterError, AdapterSimulatorStatus, ScreenStream, SimulatorAdapter};
 use async_trait::async_trait;
+use simbridge_shared::protocol::{
+    DeviceButton, GestureData, GesturePayload, GpsLocation, Notification, StreamQuality,
+    SwipeDirection, TouchEventPayload, TransferDirection,
+};
 use std::path::Path;
 use std::process::Command;
-use super::interface::{SimulatorAdapter, AdapterError, ScreenStream, AdapterSimulatorStatus};
-use simbridge_shared::protocol::{
-    TouchEventPayload, GesturePayload, GpsLocation, DeviceButton, Notification,
-    StreamQuality, TransferDirection,
-};
 
 /// Android screen stream handle using ADB commands
 pub struct AndroidScreenStream {
@@ -33,29 +33,45 @@ impl AndroidScreenStream {
 
     /// Capture a single screenshot frame using adb screencap
     pub fn capture_frame(&self) -> Result<Vec<u8>, AdapterError> {
+        let screenshot_path = std::env::temp_dir().join("simbridge-android-screen.png");
+        let screenshot_path_string = screenshot_path.to_string_lossy().into_owned();
+
         // Use ADB to copy screenshot from device to server
         let output = Command::new("adb")
-            .args(["-s", &self.device_id, "shell", "screencap", "/sdcard/screen.png"])
+            .args([
+                "-s",
+                &self.device_id,
+                "shell",
+                "screencap",
+                "/sdcard/screen.png",
+            ])
             .output()
             .map_err(|e| AdapterError::CommandFailed(format!("ADB screencap failed: {}", e)))?;
 
         if !output.status.success() {
             return Err(AdapterError::CommandFailed(
-                "Screenshot capture command failed on device".to_string()
+                "Screenshot capture command failed on device".to_string(),
             ));
         }
 
         // Pull the screenshot file to local system
         std::process::Command::new("adb")
-            .args(["-s", &self.device_id, "pull", "/sdcard/screen.png", "/tmp/android_screen.png"])
+            .args([
+                "-s",
+                &self.device_id,
+                "pull",
+                "/sdcard/screen.png",
+                &screenshot_path_string,
+            ])
             .output()
             .map_err(|e| AdapterError::CommandFailed(format!("ADB pull failed: {}", e)))?;
 
         // Read the screenshot file
-        std::fs::read("/tmp/android_screen.png")
-            .map_err(|e| AdapterError::FileNotFound(
-                "/tmp/android_screen.png".to_string()
-            ))
+        let frame = std::fs::read(&screenshot_path).map_err(|e| {
+            AdapterError::FileNotFound(screenshot_path.to_string_lossy().into_owned())
+        })?;
+        let _ = std::fs::remove_file(screenshot_path);
+        Ok(frame)
     }
 
     /// Start recording screen to video file
@@ -65,16 +81,21 @@ impl AndroidScreenStream {
         }
 
         let output = Command::new("adb")
-            .args(["-s", &self.device_id, "shell", "screenrecord", "/sdcard/android_recording.mp4"])
+            .args([
+                "-s",
+                &self.device_id,
+                "shell",
+                "screenrecord",
+                "/sdcard/android_recording.mp4",
+            ])
             .output()
             .map_err(|e| AdapterError::CommandFailed(format!("screenrecord failed: {}", e)))?;
 
         if !output.status.success() {
-            return Err(AdapterError::CommandFailed(
-                format!("Screen recording failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                )
-            ));
+            return Err(AdapterError::CommandFailed(format!(
+                "Screen recording failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         self.is_recording = true;
@@ -108,13 +129,55 @@ pub struct AndroidEmulatorAdapter {
     adb_path: String,
 }
 
+/// Resolve ADB without requiring the Android SDK to be on the server PATH.
+pub fn resolve_adb_path() -> String {
+    if let Ok(path) = std::env::var("SIMBRIDGE_ADB_PATH") {
+        if !path.trim().is_empty() {
+            return path;
+        }
+    }
+
+    for variable in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
+        if let Ok(sdk_root) = std::env::var(variable) {
+            let candidate = Path::new(&sdk_root)
+                .join("platform-tools")
+                .join(adb_executable());
+            if candidate.is_file() {
+                return candidate.to_string_lossy().into_owned();
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+        let candidate = Path::new(&local_app_data)
+            .join("Android")
+            .join("Sdk")
+            .join("platform-tools")
+            .join(adb_executable());
+        if candidate.is_file() {
+            return candidate.to_string_lossy().into_owned();
+        }
+    }
+
+    "adb".to_string()
+}
+
+fn adb_executable() -> &'static str {
+    if cfg!(windows) {
+        "adb.exe"
+    } else {
+        "adb"
+    }
+}
+
 impl AndroidEmulatorAdapter {
     pub fn new(device_id: String, device_name: String) -> Self {
         Self {
             device_id,
             device_name,
             connected: false,
-            adb_path: "adb".to_string(), // Default to adb in PATH
+            adb_path: resolve_adb_path(),
         }
     }
 
@@ -143,6 +206,25 @@ impl AndroidEmulatorAdapter {
     fn run_adb_shell_command(&self, command: &str) -> Result<String, AdapterError> {
         self.run_adb_command(&["shell", command])
     }
+
+    fn screen_size(&self) -> Result<(i32, i32), AdapterError> {
+        let output = self.run_adb_command(&["shell", "wm", "size"])?;
+        let size = output
+            .lines()
+            .rev()
+            .find_map(|line| line.rsplit_once(':').map(|(_, value)| value.trim()))
+            .unwrap_or(output.trim());
+        let (width, height) = size.split_once('x').ok_or_else(|| {
+            AdapterError::InvalidParameter("Could not determine screen size".into())
+        })?;
+        let width = width
+            .parse::<i32>()
+            .map_err(|_| AdapterError::InvalidParameter("Invalid screen width".into()))?;
+        let height = height
+            .parse::<i32>()
+            .map_err(|_| AdapterError::InvalidParameter("Invalid screen height".into()))?;
+        Ok((width, height))
+    }
 }
 
 #[async_trait]
@@ -156,13 +238,15 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
     }
 
     async fn connect(&mut self) -> Result<(), AdapterError> {
-        // Check if device is available
-        let devices = self.run_adb_command(&["devices"])?;
-        
-        if !devices.contains(&self.device_id) {
-            return Err(AdapterError::ConnectionFailed(
-                format!("Device {} not found", self.device_id)
-            ));
+        // Query the selected serial directly. `adb -s <serial> devices` is not
+        // a valid connectivity check because `devices` is a global command.
+        let state = self.run_adb_command(&["get-state"])?;
+
+        if state.trim() != "device" {
+            return Err(AdapterError::ConnectionFailed(format!(
+                "Device {} not found",
+                self.device_id
+            )));
         }
 
         self.connected = true;
@@ -187,54 +271,48 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
     }
 
     async fn start_screenshot(&mut self) -> Result<Vec<u8>, AdapterError> {
-        // Use ADB to capture screenshot
-        let output = Command::new("adb")
-            .args(["-s", &self.device_id, "shell", "screencap", "/sdcard/screen.png"])
+        // Stream the PNG directly to avoid the extra device-file and pull round trip.
+        let output = Command::new(&self.adb_path)
+            .args(["-s", &self.device_id, "exec-out", "screencap", "-p"])
             .output()
             .map_err(|e| AdapterError::CommandFailed(format!("screencap failed: {}", e)))?;
 
         if !output.status.success() {
+            return Err(AdapterError::CommandFailed(format!(
+                "Screenshot command failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
+        }
+
+        if output.stdout.is_empty() {
             return Err(AdapterError::CommandFailed(
-                format!("Screenshot command failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                )
+                "Screenshot command returned no image data".to_string(),
             ));
         }
 
-        // Pull the screenshot file to local system
-        let pull_output = Command::new("adb")
-            .args(["-s", &self.device_id, "pull", "/sdcard/screen.png", "/tmp/android_screen.png"])
-            .output()
-            .map_err(|e| AdapterError::CommandFailed(format!("ADB pull failed: {}", e)))?;
-
-        if !pull_output.status.success() {
-            return Err(AdapterError::CommandFailed(
-                format!("Pull command failed: {}",
-                    String::from_utf8_lossy(&pull_output.stderr)
-                )
-            ));
-        }
-
-        // Read the screenshot file
-        std::fs::read("/tmp/android_screen.png")
-            .map_err(|e| AdapterError::FileNotFound("/tmp/android_screen.png".to_string()))
+        Ok(output.stdout)
     }
 
-    async fn start_screen_stream(&mut self, _quality: StreamQuality, _fps: u32) -> Result<ScreenStream, AdapterError> {
+    async fn start_screen_stream(
+        &mut self,
+        _quality: StreamQuality,
+        _fps: u32,
+    ) -> Result<ScreenStream, AdapterError> {
         // Validate device is connected and running
         if !self.is_connected() {
             return Err(AdapterError::NotConnected);
         }
 
         // Check device screen resolution
-        let output = self.run_adb_command(&[
-            "shell", "wm", "size"
-        ])?;
+        let output = self.run_adb_command(&["shell", "wm", "size"])?;
 
         // Parse width and height from output (e.g., "1080x2400")
         let parts: Vec<&str> = output.split('x').collect();
         let (width, height) = if parts.len() == 2 {
-            (parts[0].parse().unwrap_or(1080), parts[1].parse().unwrap_or(2400))
+            (
+                parts[0].parse().unwrap_or(1080),
+                parts[1].parse().unwrap_or(2400),
+            )
         } else {
             (1080, 2400) // Default dimensions
         };
@@ -255,10 +333,10 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
         for touch in &event.touches {
             let x = touch.x as i32;
             let y = touch.y as i32;
-            
+
             // Convert phase to string for matching
             let phase_str = format!("{:?}", touch.phase).to_lowercase();
-            
+
             if phase_str.contains("began") || phase_str.contains("moved") {
                 self.run_adb_shell_command(&format!("input tap {} {}", x, y))?;
             }
@@ -267,8 +345,51 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
         Ok(())
     }
 
-    async fn send_gesture(&mut self, _gesture: GesturePayload) -> Result<(), AdapterError> {
-        // TODO: Implement gestures using adb shell input
+    async fn send_gesture(&mut self, gesture: GesturePayload) -> Result<(), AdapterError> {
+        match gesture.data {
+            GestureData::Swipe {
+                direction,
+                distance,
+            } => {
+                if !distance.is_finite() || distance < 0.0 {
+                    return Err(AdapterError::InvalidParameter(
+                        "Swipe distance must be non-negative".into(),
+                    ));
+                }
+                let (width, height) = self.screen_size()?;
+                let (start_x, start_y) = (width / 2, height / 2);
+                let distance = distance.round() as i32;
+                let (end_x, end_y) = match direction {
+                    SwipeDirection::Up => (start_x, (start_y - distance).max(0)),
+                    SwipeDirection::Down => (start_x, (start_y + distance).min(height - 1)),
+                    SwipeDirection::Left => ((start_x - distance).max(0), start_y),
+                    SwipeDirection::Right => ((start_x + distance).min(width - 1), start_y),
+                };
+                self.run_adb_shell_command(&format!(
+                    "input swipe {} {} {} {} 300",
+                    start_x, start_y, end_x, end_y
+                ))?;
+            }
+            GestureData::LongPress { x, y, duration_ms } => {
+                self.run_adb_shell_command(&format!(
+                    "input swipe {} {} {} {} {}",
+                    x.round() as i32,
+                    y.round() as i32,
+                    x.round() as i32,
+                    y.round() as i32,
+                    duration_ms
+                ))?;
+            }
+            GestureData::DoubleTap { x, y } => {
+                let x = x.round() as i32;
+                let y = y.round() as i32;
+                self.run_adb_shell_command(&format!("input tap {} {}", x, y))?;
+                self.run_adb_shell_command(&format!("input tap {} {}", x, y))?;
+            }
+            GestureData::Pinch { .. } | GestureData::Rotation { .. } => {
+                return Err(AdapterError::NotSupported);
+            }
+        }
         Ok(())
     }
 
@@ -277,8 +398,14 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
         let lat = location.latitude;
         let lon = location.longitude;
         let alt = location.altitude.unwrap_or(0.0);
-        
-        self.run_adb_command(&["geo", "fix", &lon.to_string(), &lat.to_string(), &alt.to_string()])?;
+
+        self.run_adb_command(&[
+            "geo",
+            "fix",
+            &lon.to_string(),
+            &lat.to_string(),
+            &alt.to_string(),
+        ])?;
         Ok(())
     }
 
@@ -350,7 +477,11 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
         Ok(())
     }
 
-    async fn transfer_file(&mut self, _direction: TransferDirection, _path: &Path) -> Result<Vec<u8>, AdapterError> {
+    async fn transfer_file(
+        &mut self,
+        _direction: TransferDirection,
+        _path: &Path,
+    ) -> Result<Vec<u8>, AdapterError> {
         // TODO: Implement file transfer using adb push/pull
         Ok(vec![])
     }

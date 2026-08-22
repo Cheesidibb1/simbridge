@@ -1,13 +1,13 @@
 // Authentication management
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use simbridge_shared::{
-    auth::{token::TokenManager, pairing::PairingManager, crypto::Crypto},
+    auth::{crypto::Crypto, pairing::PairingManager, token::TokenManager},
     models::Device,
 };
+use std::collections::HashMap;
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 /// Authentication manager
 pub struct AuthManager {
@@ -37,14 +37,14 @@ impl AuthManager {
         public_key: String,
     ) -> Result<String, AuthError> {
         let mut pairing_manager = self.pairing_manager.write().await;
-        
+
         // Check if device is already paired
         let devices = self.devices.read().await;
         if devices.contains_key(&device_id) {
             return Err(AuthError::DeviceAlreadyPaired);
         }
         drop(devices);
-        
+
         let session = pairing_manager.create_session(device_id, device_name, public_key);
         Ok(session.pairing_code)
     }
@@ -52,9 +52,10 @@ impl AuthManager {
     /// Complete pairing with code
     pub async fn complete_pairing(&self, code: &str) -> Result<Device, AuthError> {
         let mut pairing_manager = self.pairing_manager.write().await;
-        let session = pairing_manager.complete_session(code)
+        let session = pairing_manager
+            .complete_session(code)
             .map_err(|e| AuthError::PairingFailed(e.to_string()))?;
-        
+
         let device = Device {
             id: session.device_id.clone(),
             name: session.device_name,
@@ -69,32 +70,39 @@ impl AuthManager {
 
         let mut devices = self.devices.write().await;
         devices.insert(device.id.clone(), device.clone());
-        
+
         Ok(device)
     }
 
     /// Generate auth token for a device
-    pub async fn generate_token(&self, device_id: &str) -> Result<simbridge_shared::auth::token::AuthToken, AuthError> {
+    pub async fn generate_token(
+        &self,
+        device_id: &str,
+    ) -> Result<simbridge_shared::auth::token::AuthToken, AuthError> {
         let devices = self.devices.read().await;
-        
+
         if !devices.contains_key(device_id) {
             return Err(AuthError::DeviceNotFound);
         }
-        
+
         Ok(self.token_manager.generate_auth_token(device_id))
     }
 
     /// Validate an auth token
-    pub async fn validate_token(&self, token: &simbridge_shared::auth::token::AuthToken) -> Result<(), AuthError> {
+    pub async fn validate_token(
+        &self,
+        token: &simbridge_shared::auth::token::AuthToken,
+    ) -> Result<(), AuthError> {
         let devices = self.devices.read().await;
-        
+
         if !devices.contains_key(&token.device_id) {
             return Err(AuthError::DeviceNotFound);
         }
-        
-        self.token_manager.validate_token(token)
+
+        self.token_manager
+            .validate_token(token)
             .map_err(|_| AuthError::InvalidToken)?;
-        
+
         Ok(())
     }
 
@@ -113,7 +121,8 @@ impl AuthManager {
     /// Remove a device
     pub async fn remove_device(&self, device_id: &str) -> Result<(), AuthError> {
         let mut devices = self.devices.write().await;
-        devices.remove(device_id)
+        devices
+            .remove(device_id)
             .map(|_| ())
             .ok_or(AuthError::DeviceNotFound)
     }
@@ -141,25 +150,25 @@ impl AuthManager {
 pub enum AuthError {
     #[error("Device not found")]
     DeviceNotFound,
-    
+
     #[error("Device already paired")]
     DeviceAlreadyPaired,
-    
+
     #[error("Invalid token")]
     InvalidToken,
-    
+
     #[error("Token expired")]
     TokenExpired,
-    
+
     #[error("Too many failed attempts")]
     TooManyFailedAttempts,
-    
+
     #[error("Account locked")]
     AccountLocked,
-    
+
     #[error("Pairing session not found")]
     PairingSessionNotFound,
-    
+
     #[error("Pairing session expired")]
     PairingSessionExpired,
 

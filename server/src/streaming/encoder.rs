@@ -1,7 +1,7 @@
 // Video encoding utilities for SimBridge screen streaming
 
-use thiserror::Error;
 use std::process::Command;
+use thiserror::Error;
 
 /// Video codec types
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -91,8 +91,8 @@ impl VideoEncoder {
 
     /// Encode PNG image to JPEG frame (lossy compression for streaming)
     pub fn encode_png_to_jpeg(&self, png_data: &[u8]) -> Result<Vec<u8>, EncoderError> {
+        use image::{DynamicImage, ImageFormat};
         use std::io::Cursor;
-        use image::{ImageFormat, DynamicImage};
 
         // Decode PNG
         let img = image::load_from_memory(png_data)
@@ -112,12 +112,12 @@ impl VideoEncoder {
         // For now, return PNG as-is with a frame marker
         // In production, use ffmpeg to re-encode
         let mut encoded = vec![
-            0x00, 0x00, 0x00, 0x01,  // Frame header
-            0x68, 0x26, 0x34,         // "h264" marker
+            0x00, 0x00, 0x00, 0x01, // Frame header
+            0x68, 0x26, 0x34, // "h264" marker
         ];
         encoded.extend_from_slice(&(png_data.len() as u32).to_be_bytes());
         encoded.extend_from_slice(png_data);
-        
+
         Ok(encoded)
     }
 
@@ -133,20 +133,18 @@ pub struct FfmpegEncoder;
 impl FfmpegEncoder {
     /// Check if FFmpeg is available
     pub fn is_available() -> bool {
-        Command::new("ffmpeg")
-            .args(["-version"])
-            .output()
-            .is_ok()
+        Command::new("ffmpeg").args(["-version"]).output().is_ok()
     }
 
     /// Get FFmpeg version
     pub fn version() -> Option<String> {
-        let output = Command::new("ffmpeg")
-            .args(["-version"])
-            .output();
+        let output = Command::new("ffmpeg").args(["-version"]).output();
 
         if let Ok(out) = output {
-            String::from_utf8_lossy(&out.stdout).lines().next().map(|s| s.to_string())
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .next()
+                .map(|s| s.to_string())
         } else {
             None
         }
@@ -161,21 +159,29 @@ impl FfmpegEncoder {
 
         let status = Command::new("ffmpeg")
             .args([
-                "-y",                               // Overwrite output
-                "-i", png_path,
-                "-vframes", "1",                    // Single frame
-                "-an",                              // No audio  
-                "-pix_fmt", "yuv420p",
-                "-c:v", "libx264",
-                "-preset", "ultrafast",
-                "-r", "30",                         // 30 FPS
+                "-y", // Overwrite output
+                "-i",
+                png_path,
+                "-vframes",
+                "1",   // Single frame
+                "-an", // No audio
+                "-pix_fmt",
+                "yuv420p",
+                "-c:v",
+                "libx264",
+                "-preset",
+                "ultrafast",
+                "-r",
+                "30", // 30 FPS
                 output_path,
             ])
             .status();
 
         match status {
             Ok(s) if s.success() => Ok(()),
-            _ => Err(EncoderError::EncodingFailed("FFmpeg encoding failed".to_string())),
+            _ => Err(EncoderError::EncodingFailed(
+                "FFmpeg encoding failed".to_string(),
+            )),
         }
     }
 
@@ -183,16 +189,14 @@ impl FfmpegEncoder {
     pub fn video_to_png_frames(video_path: &str, output_dir: &str) -> Result<(), EncoderError> {
         let output_pattern = format!("{}/frame_%04d.png", output_dir);
         let status = Command::new("ffmpeg")
-            .args([
-                "-i", video_path,
-                "-vf", "fps=30",
-                &output_pattern,
-            ])
+            .args(["-i", video_path, "-vf", "fps=30", &output_pattern])
             .status();
 
         match status {
             Ok(s) if s.success() => Ok(()),
-            _ => Err(EncoderError::EncodingFailed("FFmpeg frame extraction failed".to_string())),
+            _ => Err(EncoderError::EncodingFailed(
+                "FFmpeg frame extraction failed".to_string(),
+            )),
         }
     }
 
@@ -201,13 +205,11 @@ impl FfmpegEncoder {
         // Compress PNG data for transmission (simple gzip)
         let mut binding = std::io::Cursor::new(vec![]);
         {
-            let mut compressed = flate2::write::GzEncoder::new(
-                &mut binding,
-                flate2::Compression::default(),
-            );
+            let mut compressed =
+                flate2::write::GzEncoder::new(&mut binding, flate2::Compression::default());
             // Placeholder - would use actual compression in production
         }
-        
+
         // Placeholder - would use actual compression in production
         Ok(png_bytes)
     }
@@ -218,13 +220,13 @@ impl FfmpegEncoder {
 pub enum EncoderError {
     #[error("Encoder not initialized")]
     NotInitialized,
-    
+
     #[error("Encoding failed: {0}")]
     EncodingFailed(String),
-    
+
     #[error("Invalid frame data: {0}")]
     InvalidFrameData(String),
-    
+
     #[error("FFmpeg not available. Install FFmpeg to use video encoding.\nTry: brew install ffmpeg (macOS) or apt-get install ffmpeg (Linux)")]
     FfmpegNotFound,
 }
@@ -243,8 +245,14 @@ mod tests {
     #[test]
     fn test_encoder_quality_from_string() {
         assert_eq!(EncoderQuality::from("low".to_string()), EncoderQuality::Low);
-        assert_eq!(EncoderQuality::from("high".to_string()), EncoderQuality::High);
-        assert_eq!(EncoderQuality::from("medium".to_string()), EncoderQuality::Medium);
+        assert_eq!(
+            EncoderQuality::from("high".to_string()),
+            EncoderQuality::High
+        );
+        assert_eq!(
+            EncoderQuality::from("medium".to_string()),
+            EncoderQuality::Medium
+        );
     }
 
     #[test]

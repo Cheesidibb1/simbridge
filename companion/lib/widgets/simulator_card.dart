@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/simulator.dart';
-import '../status_badge.dart';
+import 'status_badge.dart';
 
 class SimulatorCard extends StatelessWidget {
   final Simulator simulator;

@@ -5,42 +5,42 @@ library;
 
 enum WsMessageType {
   // Client -> Server
-  pairRequest('PairRequest'),
-  authRequest('AuthRequest'),
-  simulatorList('SimulatorList'),
-  connectSimulator('ConnectSimulator'),
-  disconnectSimulator('DisconnectSimulator'),
-  touchEvent('TouchEvent'),
-  gesture('Gesture'),
-  gpsUpdate('GpsUpdate'),
-  headingUpdate('HeadingUpdate'),
-  motionUpdate('MotionUpdate'),
-  deviceButton('DeviceButton'),
-  clipboardSync('ClipboardSync'),
-  fileTransfer('FileTransfer'),
-  startRecording('StartRecording'),
-  stopRecording('StopRecording'),
-  getRecordings('GetRecordings'),
-  ping('Ping'),
+  pairRequest('pair_request'),
+  authRequest('auth_request'),
+  simulatorList('simulator_list'),
+  connectSimulator('connect_simulator'),
+  disconnectSimulator('disconnect_simulator'),
+  touchEvent('touch_event'),
+  gesture('gesture'),
+  gpsUpdate('gps_update'),
+  headingUpdate('heading_update'),
+  motionUpdate('motion_update'),
+  deviceButton('device_button'),
+  clipboardSync('clipboard_sync'),
+  fileTransfer('file_transfer'),
+  startRecording('start_recording'),
+  stopRecording('stop_recording'),
+  getRecordings('get_recordings'),
+  ping('ping'),
 
   // Server -> Client
-  pairResponse('PairResponse'),
-  authResponse('AuthResponse'),
-  screenFrame('ScreenFrame'),
-  notification('Notification'),
-  recordingStatus('RecordingStatus'),
-  pong('Pong'),
-  error('Error'),
+  pairResponse('pair_response'),
+  authResponse('auth_response'),
+  screenFrame('screen_frame'),
+  notification('notification'),
+  recordingStatus('recording_status'),
+  pong('pong'),
+  error('error'),
 
   // Bidirectional
-  settingsUpdate('SettingsUpdate'),
-  sessionInfo('SessionInfo'),
-  metricsUpdate('MetricsUpdate'),
+  settingsUpdate('settings_update'),
+  sessionInfo('session_info'),
+  metricsUpdate('metrics_update'),
 
   // WebRTC signaling
-  webrtcOffer('WebrtcOffer'),
-  webrtcAnswer('WebrtcAnswer'),
-  webrtcIceCandidate('WebrtcIceCandidate');
+  webrtcOffer('webrtc_offer'),
+  webrtcAnswer('webrtc_answer'),
+  webrtcIceCandidate('webrtc_ice_candidate');
 
   final String wire;
   const WsMessageType(this.wire);

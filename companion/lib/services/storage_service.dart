@@ -60,4 +60,8 @@ class StorageService {
       await _prefs.setString(PrefsKeys.lastSimulatorId, value);
     }
   }
+
+  bool get onboardingComplete => _prefs.getBool(PrefsKeys.onboardingComplete) ?? false;
+  Future<void> setOnboardingComplete(bool value) =>
+      _prefs.setBool(PrefsKeys.onboardingComplete, value);
 }

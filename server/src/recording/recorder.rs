@@ -1,11 +1,11 @@
 // Session recorder
 
+use simbridge_shared::protocol::Message;
 use std::path::PathBuf;
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use simbridge_shared::protocol::Message;
-use thiserror::Error;
 
 /// Session recorder
 pub struct SessionRecorder {
@@ -45,10 +45,10 @@ impl SessionRecorder {
     pub async fn stop(&self) -> Result<(), RecordingError> {
         let mut is_recording = self.is_recording.write().await;
         *is_recording = false;
-        
+
         // Save recording to file
         self.save_to_file().await?;
-        
+
         Ok(())
     }
 
@@ -69,7 +69,7 @@ impl SessionRecorder {
 
         let mut events = self.events.write().await;
         events.push(event);
-        
+
         Ok(())
     }
 
@@ -88,19 +88,18 @@ impl SessionRecorder {
     /// Save recording to file
     async fn save_to_file(&self) -> Result<(), RecordingError> {
         let events = self.events.read().await;
-        
+
         let recording_data = serde_json::to_string_pretty(&*events)
             .map_err(|e| RecordingError::SerializationError(e.to_string()))?;
-        
+
         // Ensure parent directory exists
         if let Some(parent) = self.output_path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| RecordingError::IoError(e.to_string()))?;
+            std::fs::create_dir_all(parent).map_err(|e| RecordingError::IoError(e.to_string()))?;
         }
-        
+
         std::fs::write(&self.output_path, recording_data)
             .map_err(|e| RecordingError::IoError(e.to_string()))?;
-        
+
         Ok(())
     }
 }
@@ -110,13 +109,13 @@ impl SessionRecorder {
 pub enum RecordingError {
     #[error("IO error: {0}")]
     IoError(String),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(String),
-    
+
     #[error("Not recording")]
     NotRecording,
-    
+
     #[error("Recording already in progress")]
     AlreadyRecording,
 }

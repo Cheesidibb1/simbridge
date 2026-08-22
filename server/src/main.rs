@@ -2,15 +2,16 @@
 
 use clap::Parser;
 use simbridge_shared::logging;
-use tracing::info;
 use std::sync::Arc;
+use tracing::{info, warn};
 
 use simbridge_server::{
-    networking::rest::{RestServerState, create_router},
-    networking::websocket::{WebSocketServerState, websocket_handler},
-    storage::database::Database,
-    core::session::SessionManager,
+    adapters::{discovery::DeviceDiscovery, interface::SimulatorAdapter},
     core::auth::AuthManager,
+    core::session::SessionManager,
+    networking::rest::{create_router, RestServerState},
+    networking::websocket::{websocket_handler, WebSocketServerState},
+    storage::database::Database,
 };
 
 #[derive(Parser, Debug)]
@@ -57,15 +58,32 @@ async fn main() -> anyhow::Result<()> {
     // Initialize REST server state
     let rest_state = RestServerState::new();
 
+    // Populate Android devices for the simulator list. ADB may not be
+    // available until the Android SDK is configured, so discovery is best effort.
+    match DeviceDiscovery::new().discover_android().await {
+        Ok(adapters) => {
+            let mut android_devices = rest_state.android_adapters.write().await;
+            *android_devices = adapters
+                .iter()
+                .map(|adapter| adapter.simulator_id().to_string())
+                .collect();
+            info!(count = android_devices.len(), "Discovered Android devices");
+        }
+        Err(error) => warn!(%error, "Android device discovery unavailable"),
+    }
+
     // Initialize WebSocket server state
     let ws_state = WebSocketServerState::new();
 
     // Create Axum router with WebSocket support
     let app = create_router()
-        .route("/ws", axum::routing::get({
-            let ws_state = ws_state.clone();
-            move |ws| websocket_handler(ws, ws_state)
-        }))
+        .route(
+            "/ws",
+            axum::routing::get({
+                let ws_state = ws_state.clone();
+                move |ws| websocket_handler(ws, ws_state)
+            }),
+        )
         .with_state(rest_state);
 
     // Start server
@@ -75,9 +93,7 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Server listening on {}:{}", args.host, args.port);
 
-    axum::serve(listener, app)
-        .await
-        .expect("Server error");
+    axum::serve(listener, app).await.expect("Server error");
 
     Ok(())
 }

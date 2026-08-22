@@ -164,10 +164,10 @@ pub enum GestureType {
 #[serde(untagged)]
 pub enum GestureData {
     Swipe { direction: SwipeDirection, distance: f64 },
-    Pinch { scale: f64, center: (f64, f64) },
-    Rotation { angle: f64, center: (f64, f64) },
-    LongPress { location: (f64, f64), duration: f64 },
-    DoubleTap { location: (f64, f64) },
+    Pinch { scale: f64 },
+    Rotation { angle: f64 },
+    LongPress { x: f64, y: f64, duration_ms: u64 },
+    DoubleTap { x: f64, y: f64 },
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]

@@ -4,13 +4,13 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    routing::{get, post, delete},
+    routing::{delete, get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{info, error};
+use tracing::{error, info};
 use uuid::Uuid;
 // use crate::streaming::webrtc::{WebRTCSignalingManager, WebRTCSessionStats, SignalingHandler};
 
@@ -210,12 +210,12 @@ pub fn create_router() -> Router<RestServerState> {
         .route("/api/v1/sessions", get(list_sessions))
         .route("/api/v1/sessions", post(create_session))
         .route("/api/v1/sessions/:id", delete(delete_session))
-        // WebRTC endpoints (commented out for basic build)
-        // .route("/api/v1/webrtc/sessions", post(create_webrtc_session))
-        // .route("/api/v1/webrtc/sessions/:id", get(get_webrtc_session))
-        // .route("/api/v1/webrtc/sessions/:id", delete(delete_webrtc_session))
-        // .route("/api/v1/webrtc/sessions/:id/stats", get(get_webrtc_session_stats))
-        // .route("/api/v1/webrtc/signaling", post(handle_signaling_message))
+    // WebRTC endpoints (commented out for basic build)
+    // .route("/api/v1/webrtc/sessions", post(create_webrtc_session))
+    // .route("/api/v1/webrtc/sessions/:id", get(get_webrtc_session))
+    // .route("/api/v1/webrtc/sessions/:id", delete(delete_webrtc_session))
+    // .route("/api/v1/webrtc/sessions/:id/stats", get(get_webrtc_session_stats))
+    // .route("/api/v1/webrtc/signaling", post(handle_signaling_message))
 }
 
 /// Health check endpoint
@@ -230,12 +230,12 @@ async fn health_check(State(state): State<RestServerState>) -> Json<HealthRespon
 /// List available simulators
 async fn list_simulators(State(state): State<RestServerState>) -> Json<SimulatorsResponse> {
     info!("Listing simulators");
-    
+
     let android_adapters = state.android_adapters.read().await;
     let ios_adapters = state.ios_adapters.read().await;
-    
+
     let mut simulators = vec![];
-    
+
     // Add Android devices
     for device_id in android_adapters.iter() {
         simulators.push(SimulatorInfo {
@@ -245,7 +245,7 @@ async fn list_simulators(State(state): State<RestServerState>) -> Json<Simulator
             status: "available".to_string(),
         });
     }
-    
+
     // Add iOS devices
     for device_id in ios_adapters.iter() {
         simulators.push(SimulatorInfo {
@@ -255,7 +255,7 @@ async fn list_simulators(State(state): State<RestServerState>) -> Json<Simulator
             status: "available".to_string(),
         });
     }
-    
+
     // Add default examples if no devices found
     if simulators.is_empty() {
         simulators.push(SimulatorInfo {
@@ -271,7 +271,7 @@ async fn list_simulators(State(state): State<RestServerState>) -> Json<Simulator
             status: "offline".to_string(),
         });
     }
-    
+
     Json(SimulatorsResponse { simulators })
 }
 
@@ -337,7 +337,9 @@ async fn delete_session(
 
     if let Some(pos) = sessions.iter().position(|id| id == &session_id) {
         sessions.remove(pos);
-        Ok(Json(serde_json::json!({ "status": "deleted", "session_id": session_id })))
+        Ok(Json(
+            serde_json::json!({ "status": "deleted", "session_id": session_id }),
+        ))
     } else {
         Err(StatusCode::NOT_FOUND)
     }

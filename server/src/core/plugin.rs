@@ -1,11 +1,11 @@
 // Plugin system
 
-use std::path::{Path, PathBuf};
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use simbridge_shared::protocol::Message;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::RwLock;
 
 /// Plugin context
 pub struct PluginContext {
@@ -40,19 +40,19 @@ impl PluginManager {
     /// Load a plugin
     pub async fn load_plugin(&self, mut plugin: Box<dyn Plugin>) -> Result<(), PluginError> {
         let name = plugin.name().to_string();
-        
+
         plugin.initialize(&self.context)?;
-        
+
         let mut plugins = self.plugins.write().await;
         plugins.insert(name, plugin);
-        
+
         Ok(())
     }
 
     /// Unload a plugin
     pub async fn unload_plugin(&self, name: &str) -> Result<(), PluginError> {
         let mut plugins = self.plugins.write().await;
-        
+
         if let Some(mut plugin) = plugins.remove(name) {
             plugin.shutdown()?;
             Ok(())
@@ -70,7 +70,8 @@ impl PluginManager {
     /// Get all loaded plugins
     pub async fn get_all_plugins(&self) -> Vec<(String, String)> {
         let plugins = self.plugins.read().await;
-        plugins.iter()
+        plugins
+            .iter()
             .map(|(name, plugin)| (name.clone(), plugin.version().to_string()))
             .collect()
     }
@@ -94,11 +95,11 @@ impl PluginManager {
     /// Shutdown all plugins
     pub async fn shutdown_all(&self) -> Result<(), PluginError> {
         let mut plugins = self.plugins.write().await;
-        
+
         for (_, mut plugin) in plugins.drain() {
             plugin.shutdown()?;
         }
-        
+
         Ok(())
     }
 }
@@ -108,16 +109,16 @@ impl PluginManager {
 pub enum PluginError {
     #[error("Plugin not found: {0}")]
     NotFound(String),
-    
+
     #[error("Plugin initialization failed: {0}")]
     InitializationFailed(String),
-    
+
     #[error("Plugin error: {0}")]
     PluginError(String),
-    
+
     #[error("Plugin load failed: {0}")]
     LoadFailed(String),
-    
+
     #[error("Plugin unload failed: {0}")]
     UnloadFailed(String),
 }

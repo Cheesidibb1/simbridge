@@ -1,13 +1,13 @@
 // iOS Device/Emulator adapter using libimobiledevice and simctl
 
+use super::interface::{AdapterError, AdapterSimulatorStatus, ScreenStream, SimulatorAdapter};
 use async_trait::async_trait;
+use simbridge_shared::protocol::{
+    DeviceButton, GesturePayload, GpsLocation, Notification, StreamQuality, TouchEventPayload,
+    TransferDirection,
+};
 use std::path::Path;
 use std::process::Command;
-use super::interface::{SimulatorAdapter, AdapterError, ScreenStream, AdapterSimulatorStatus};
-use simbridge_shared::protocol::{
-    TouchEventPayload, GesturePayload, GpsLocation, DeviceButton, Notification,
-    StreamQuality, TransferDirection,
-};
 
 /// Screen stream handle for iOS simulator
 pub struct IosScreenStream {
@@ -45,12 +45,20 @@ impl IosScreenStream {
     pub fn capture_frame(&self) -> Result<Vec<u8>, AdapterError> {
         // For iOS, use simctl to capture a screenshot
         let output = Command::new("xcrun")
-            .args(["simctl", "io", &self.device_id, "screenshot", "/tmp/ios_frame.png"])
+            .args([
+                "simctl",
+                "io",
+                &self.device_id,
+                "screenshot",
+                "/tmp/ios_frame.png",
+            ])
             .output()
             .map_err(|e| AdapterError::CommandFailed(format!("screenshot failed: {}", e)))?;
 
         if !output.status.success() {
-            return Err(AdapterError::CommandFailed("screenshot command failed".to_string()));
+            return Err(AdapterError::CommandFailed(
+                "screenshot command failed".to_string(),
+            ));
         }
 
         // Read the captured frame
@@ -91,7 +99,7 @@ impl IosSimulatorAdapter {
     pub fn new(device_id: String, device_name: String) -> Self {
         // Determine if it's a physical device or simulator
         let is_physical_device = device_id.len() == 40; // UDID is 40 chars
-        
+
         Self {
             device_id,
             device_name,
@@ -161,25 +169,29 @@ impl SimulatorAdapter for IosSimulatorAdapter {
                 .args(["-l"])
                 .output()
                 .map_err(|e| AdapterError::ConnectionFailed(format!("idevice_id failed: {}", e)))?;
-            
+
             let devices = String::from_utf8_lossy(&output.stdout);
             if !devices.contains(&self.device_id) {
-                return Err(AdapterError::ConnectionFailed(
-                    format!("iOS device {} not found", self.device_id)
-                ));
+                return Err(AdapterError::ConnectionFailed(format!(
+                    "iOS device {} not found",
+                    self.device_id
+                )));
             }
         } else {
             // Check if simulator is available using simctl
             let output = Command::new("xcrun")
                 .args(["simctl", "list", "devices"])
                 .output()
-                .map_err(|e| AdapterError::ConnectionFailed(format!("simctl list failed: {}", e)))?;
-            
+                .map_err(|e| {
+                    AdapterError::ConnectionFailed(format!("simctl list failed: {}", e))
+                })?;
+
             let devices = String::from_utf8_lossy(&output.stdout);
             if !devices.contains(&self.device_id) {
-                return Err(AdapterError::ConnectionFailed(
-                    format!("iOS simulator {} not found", self.device_id)
-                ));
+                return Err(AdapterError::ConnectionFailed(format!(
+                    "iOS simulator {} not found",
+                    self.device_id
+                )));
             }
         }
 
@@ -206,25 +218,32 @@ impl SimulatorAdapter for IosSimulatorAdapter {
 
     async fn start_screenshot(&mut self) -> Result<Vec<u8>, AdapterError> {
         let output = Command::new("xcrun")
-            .args(["simctl", "io", &self.device_id, "screenshot", "/tmp/simulator.png"])
+            .args([
+                "simctl",
+                "io",
+                &self.device_id,
+                "screenshot",
+                "/tmp/simulator.png",
+            ])
             .output()
             .map_err(|e| AdapterError::CommandFailed(format!("screenshot failed: {}", e)))?;
 
         if !output.status.success() {
-            return Err(AdapterError::CommandFailed(
-                format!("Screenshot command failed: {}",
-                    String::from_utf8_lossy(&output.stderr)
-                )
-            ));
+            return Err(AdapterError::CommandFailed(format!(
+                "Screenshot command failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            )));
         }
 
         std::fs::read("/tmp/simulator.png")
-            .map_err(|e| AdapterError::FileNotFound(
-                "/tmp/simulator.png".to_string()
-            ))
+            .map_err(|e| AdapterError::FileNotFound("/tmp/simulator.png".to_string()))
     }
 
-    async fn start_screen_stream(&mut self, quality: StreamQuality, fps: u32) -> Result<ScreenStream, AdapterError> {
+    async fn start_screen_stream(
+        &mut self,
+        quality: StreamQuality,
+        fps: u32,
+    ) -> Result<ScreenStream, AdapterError> {
         // Validate device is connected and running
         if !self.is_connected() {
             return Err(AdapterError::NotConnected);
@@ -238,7 +257,7 @@ impl SimulatorAdapter for IosSimulatorAdapter {
 
         if !output.status.success() {
             return Err(AdapterError::ConnectionFailed(
-                "iOS simulator is not running. Please start it first.".to_string()
+                "iOS simulator is not running. Please start it first.".to_string(),
             ));
         }
 
@@ -276,8 +295,10 @@ impl SimulatorAdapter for IosSimulatorAdapter {
     }
 
     async fn send_gesture(&mut self, _gesture: GesturePayload) -> Result<(), AdapterError> {
-        // TODO: Implement gestures using simctl io
-        Ok(())
+        if self.is_physical_device {
+            return Err(AdapterError::NotSupported);
+        }
+        Err(AdapterError::NotSupported)
     }
 
     async fn set_location(&mut self, location: GpsLocation) -> Result<(), AdapterError> {
@@ -321,11 +342,15 @@ impl SimulatorAdapter for IosSimulatorAdapter {
     async fn install_app(&mut self, path: &Path) -> Result<(), AdapterError> {
         if self.is_physical_device {
             // Use ideviceinstaller for physical devices
-            let path_str = path.to_str().ok_or(AdapterError::InvalidParameter("Invalid path".to_string()))?;
+            let path_str = path
+                .to_str()
+                .ok_or(AdapterError::InvalidParameter("Invalid path".to_string()))?;
             self.run_idevice_command(&["installer", "install", path_str])?;
         } else {
             // Use simctl install for simulators
-            let path_str = path.to_str().ok_or(AdapterError::InvalidParameter("Invalid path".to_string()))?;
+            let path_str = path
+                .to_str()
+                .ok_or(AdapterError::InvalidParameter("Invalid path".to_string()))?;
             self.run_simctl_command(&["install", path_str])?;
         }
         Ok(())
@@ -365,7 +390,11 @@ impl SimulatorAdapter for IosSimulatorAdapter {
         Ok(())
     }
 
-    async fn transfer_file(&mut self, _direction: TransferDirection, _path: &Path) -> Result<Vec<u8>, AdapterError> {
+    async fn transfer_file(
+        &mut self,
+        _direction: TransferDirection,
+        _path: &Path,
+    ) -> Result<Vec<u8>, AdapterError> {
         // TODO: Implement file transfer
         Ok(vec![])
     }

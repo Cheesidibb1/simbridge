@@ -143,9 +143,12 @@ class WebSocketService {
   void _teardownChannel() {
     _pingTimer?.cancel();
     _pingTimer = null;
-    unawaited(_channelSub?.cancel());
+    final sub = _channelSub;
     _channelSub = null;
     _channel = null;
+    if (sub != null) {
+      unawaited(sub.cancel());
+    }
   }
 
   /// Closes the connection and disables auto-reconnect.
@@ -154,7 +157,9 @@ class WebSocketService {
     _reconnectTimer?.cancel();
     final channel = _channel;
     _teardownChannel();
-    unawaited(channel?.sink.close());
+    if (channel != null) {
+      unawaited(channel.sink.close());
+    }
     _setState(WsConnectionState.disconnected);
   }
 

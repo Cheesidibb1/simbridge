@@ -1,12 +1,12 @@
 // Screen capture manager for coordinating capture from multiple devices
 
+use crate::streaming::encoder::VideoEncoder;
+use simbridge_shared::protocol::StreamQuality;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::Duration;
-use tracing::{info, warn, error};
-use simbridge_shared::protocol::StreamQuality;
-use crate::streaming::encoder::VideoEncoder;
+use tracing::{error, info, warn};
 
 /// Active screen capture stream information
 #[derive(Clone)]
@@ -108,7 +108,9 @@ impl ScreenCaptureManager {
                     quality,
                     &streams_ref,
                     webrtc_tx.as_ref(),
-                ).await {
+                )
+                .await
+                {
                     error!("Failed to capture frame: {}", e);
                 }
             }
@@ -125,8 +127,13 @@ impl ScreenCaptureManager {
             info!("Stopped capture stream for simulator {}", simulator_id);
             Ok(())
         } else {
-            warn!("No active capture stream found for simulator {}", simulator_id);
-            Err(CaptureManagerError::StreamNotFound(simulator_id.to_string()))
+            warn!(
+                "No active capture stream found for simulator {}",
+                simulator_id
+            );
+            Err(CaptureManagerError::StreamNotFound(
+                simulator_id.to_string(),
+            ))
         }
     }
 
@@ -140,7 +147,8 @@ impl ScreenCaptureManager {
     /// Get all active capture streams
     pub async fn get_active_streams(&self) -> Vec<CaptureStreamInfo> {
         let streams = self.streams.read().await;
-        streams.values()
+        streams
+            .values()
             .filter(|info| info.is_active)
             .cloned()
             .collect()
@@ -156,8 +164,9 @@ impl ScreenCaptureManager {
     pub async fn get_statistics(&self) -> Vec<CaptureStreamStats> {
         let mut streams = self.streams.read().await;
         let now = tokio::time::Instant::now();
-        
-        streams.values()
+
+        streams
+            .values()
             .filter(|info| info.is_active)
             .map(|info| CaptureStreamStats {
                 simulator_id: info.simulator_id.clone(),
@@ -219,10 +228,16 @@ pub enum CaptureManagerError {
 impl std::fmt::Display for CaptureManagerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CaptureManagerError::StreamAlreadyActive(id) => write!(f, "Stream already active for simulator: {}", id),
-            CaptureManagerError::StreamNotFound(id) => write!(f, "No active stream found for simulator: {}", id),
+            CaptureManagerError::StreamAlreadyActive(id) => {
+                write!(f, "Stream already active for simulator: {}", id)
+            }
+            CaptureManagerError::StreamNotFound(id) => {
+                write!(f, "No active stream found for simulator: {}", id)
+            }
             CaptureManagerError::CaptureFailed(msg) => write!(f, "Capture failed: {}", msg),
-            CaptureManagerError::ShutdownInProgress(id) => write!(f, "Shutdown in progress for: {}", id),
+            CaptureManagerError::ShutdownInProgress(id) => {
+                write!(f, "Shutdown in progress for: {}", id)
+            }
         }
     }
 }
@@ -240,7 +255,11 @@ async fn capture_frame_and_deliver(
     // Get stream info for stats update
     let mut stream_info = match streams.get(simulator_id) {
         Some(info) => info.clone(),
-        None => return Err(CaptureManagerError::StreamNotFound(simulator_id.to_string())),
+        None => {
+            return Err(CaptureManagerError::StreamNotFound(
+                simulator_id.to_string(),
+            ))
+        }
     };
 
     // Update frame count
@@ -252,7 +271,10 @@ async fn capture_frame_and_deliver(
         Ok(data) => data,
         Err(e) => {
             error!("Frame capture failed: {}", e);
-            return Err(CaptureManagerError::CaptureFailed(format!("{} for simulator {}", e, simulator_id)));
+            return Err(CaptureManagerError::CaptureFailed(format!(
+                "{} for simulator {}",
+                e, simulator_id
+            )));
         }
     };
 
@@ -274,22 +296,22 @@ async fn simulate_frame_capture() -> Result<Vec<u8>, String> {
     // This will be replaced by actual adapter code that calls:
     // - IosSimulatorAdapter.start_screen_stream().await?
     // - android_screen_stream.capture_frame().await?
-    
+
     // Return a simple test pattern (red square on black background)
     let width = 1920;
     let height = 1080;
     let mut frame = vec![0u8; (width * height * 4) as usize]; // RGBA
-    
+
     // Draw red square in center
     for y in (height / 2 - 50)..(height / 2 + 50) {
         for x in (width / 2 - 50)..(width / 2 + 50) {
             let idx = (y * width + x) * 4;
-            frame[idx] = 255;     // R
-            frame[idx + 1] = 0;   // G
-            frame[idx + 2] = 0;   // B
+            frame[idx] = 255; // R
+            frame[idx + 1] = 0; // G
+            frame[idx + 2] = 0; // B
             frame[idx + 3] = 255; // A
         }
     }
-    
+
     Ok(frame)
 }

@@ -1,6 +1,6 @@
 // Database connection and initialization
 
-use sqlx::SqlitePool;
+use sqlx::{sqlite::SqliteConnectOptions, SqlitePool};
 use std::path::Path;
 use thiserror::Error;
 
@@ -18,9 +18,10 @@ impl Database {
                 .map_err(|e| DatabaseError::CreateDirError(e.to_string()))?;
         }
 
-        let connection_string = format!("sqlite:{}", database_path.display());
-        
-        let pool = SqlitePool::connect(&connection_string)
+        let options = SqliteConnectOptions::new()
+            .filename(database_path)
+            .create_if_missing(true);
+        let pool = SqlitePool::connect_with(options)
             .await
             .map_err(|e| DatabaseError::ConnectionError(e.to_string()))?;
 
@@ -33,7 +34,7 @@ impl Database {
             .run(&self.pool)
             .await
             .map_err(|e| DatabaseError::MigrationError(e.to_string()))?;
-        
+
         Ok(())
     }
 
@@ -53,16 +54,16 @@ impl Database {
 pub enum DatabaseError {
     #[error("Connection error: {0}")]
     ConnectionError(String),
-    
+
     #[error("Migration error: {0}")]
     MigrationError(String),
-    
+
     #[error("Query error: {0}")]
     QueryError(String),
-    
+
     #[error("Create directory error: {0}")]
     CreateDirError(String),
-    
+
     #[error("Not found")]
     NotFound,
 }

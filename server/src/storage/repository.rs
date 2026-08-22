@@ -1,9 +1,9 @@
 // Data repository implementations
 
-use sqlx::{SqlitePool, Row};
-use uuid::Uuid;
 use simbridge_shared::models::{Device, Session, SessionStreamConfig, StreamQuality};
+use sqlx::{Row, SqlitePool};
 use thiserror::Error;
+use uuid::Uuid;
 
 /// Device repository
 pub struct DeviceRepository {
@@ -33,7 +33,7 @@ impl DeviceRepository {
         .execute(&self.pool)
         .await
         .map_err(|e| RepositoryError::QueryError(e.to_string()))?;
-        
+
         Ok(())
     }
 
@@ -76,22 +76,25 @@ impl DeviceRepository {
         .await
         .map_err(|e| RepositoryError::QueryError(e.to_string()))?;
 
-        Ok(rows.iter().map(|r| Device {
-            id: r.get("id"),
-            name: r.get("name"),
-            device_type: match r.get::<String, _>("device_type").as_str() {
-                "Android" => simbridge_shared::models::DeviceType::Android,
-                "Ios" => simbridge_shared::models::DeviceType::Ios,
-                "Desktop" => simbridge_shared::models::DeviceType::Desktop,
-                _ => simbridge_shared::models::DeviceType::Desktop,
-            },
-            platform: r.get("platform"),
-            os_version: r.get("os_version"),
-            paired_at: r.get("paired_at"),
-            last_seen: r.get("last_seen"),
-            is_trusted: r.get("is_trusted"),
-            public_key: r.get("public_key"),
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| Device {
+                id: r.get("id"),
+                name: r.get("name"),
+                device_type: match r.get::<String, _>("device_type").as_str() {
+                    "Android" => simbridge_shared::models::DeviceType::Android,
+                    "Ios" => simbridge_shared::models::DeviceType::Ios,
+                    "Desktop" => simbridge_shared::models::DeviceType::Desktop,
+                    _ => simbridge_shared::models::DeviceType::Desktop,
+                },
+                platform: r.get("platform"),
+                os_version: r.get("os_version"),
+                paired_at: r.get("paired_at"),
+                last_seen: r.get("last_seen"),
+                is_trusted: r.get("is_trusted"),
+                public_key: r.get("public_key"),
+            })
+            .collect())
     }
 
     /// Update device
@@ -109,7 +112,7 @@ impl DeviceRepository {
         .execute(&self.pool)
         .await
         .map_err(|e| RepositoryError::QueryError(e.to_string()))?;
-        
+
         Ok(())
     }
 
@@ -120,7 +123,7 @@ impl DeviceRepository {
             .execute(&self.pool)
             .await
             .map_err(|e| RepositoryError::QueryError(e.to_string()))?;
-        
+
         Ok(())
     }
 }
@@ -152,7 +155,7 @@ impl SessionRepository {
         .execute(&self.pool)
         .await
         .map_err(|e| RepositoryError::QueryError(e.to_string()))?;
-        
+
         Ok(())
     }
 
@@ -200,34 +203,37 @@ impl SessionRepository {
         .await
         .map_err(|e| RepositoryError::QueryError(e.to_string()))?;
 
-        Ok(rows.iter().map(|r| Session {
-            id: r.get("id"),
-            device_id: r.get("device_id"),
-            simulator_id: r.get("simulator_id"),
-            status: match r.get::<String, _>("status").as_str() {
-                "Active" => simbridge_shared::protocol::SessionStatus::Active,
-                "Paused" => simbridge_shared::protocol::SessionStatus::Paused,
-                "Terminated" => simbridge_shared::protocol::SessionStatus::Terminated,
-                _ => simbridge_shared::protocol::SessionStatus::Terminated,
-            },
-            created_at: r.get("created_at"),
-            connected_at: r.get("connected_at"),
-            disconnected_at: r.get("disconnected_at"),
-            last_activity: r.get("last_activity"),
-            stream_config: SessionStreamConfig {
-                quality: StreamQuality::Medium,
-                fps: 30,
-                audio_enabled: false,
-                video_codec: "h264".to_string(),
-            },
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| Session {
+                id: r.get("id"),
+                device_id: r.get("device_id"),
+                simulator_id: r.get("simulator_id"),
+                status: match r.get::<String, _>("status").as_str() {
+                    "Active" => simbridge_shared::protocol::SessionStatus::Active,
+                    "Paused" => simbridge_shared::protocol::SessionStatus::Paused,
+                    "Terminated" => simbridge_shared::protocol::SessionStatus::Terminated,
+                    _ => simbridge_shared::protocol::SessionStatus::Terminated,
+                },
+                created_at: r.get("created_at"),
+                connected_at: r.get("connected_at"),
+                disconnected_at: r.get("disconnected_at"),
+                last_activity: r.get("last_activity"),
+                stream_config: SessionStreamConfig {
+                    quality: StreamQuality::Medium,
+                    fps: 30,
+                    audio_enabled: false,
+                    video_codec: "h264".to_string(),
+                },
+            })
+            .collect())
     }
 
     /// Update session
     pub async fn update(&self, session: &Session) -> Result<(), RepositoryError> {
         sqlx::query(
             "UPDATE sessions SET status = ?, disconnected_at = ?, last_activity = ? 
-             WHERE id = ?"
+             WHERE id = ?",
         )
         .bind(format!("{:?}", session.status))
         .bind(session.disconnected_at)
@@ -236,7 +242,7 @@ impl SessionRepository {
         .execute(&self.pool)
         .await
         .map_err(|e| RepositoryError::QueryError(e.to_string()))?;
-        
+
         Ok(())
     }
 
@@ -247,7 +253,7 @@ impl SessionRepository {
             .execute(&self.pool)
             .await
             .map_err(|e| RepositoryError::QueryError(e.to_string()))?;
-        
+
         Ok(())
     }
 }
@@ -257,10 +263,10 @@ impl SessionRepository {
 pub enum RepositoryError {
     #[error("Query error: {0}")]
     QueryError(String),
-    
+
     #[error("Not found")]
     NotFound,
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(String),
 }

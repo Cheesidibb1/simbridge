@@ -12,7 +12,9 @@ import 'api_exception.dart';
 /// instead of hitting the network.
 class ApiClient {
   /// Origin only, no trailing slash — e.g. `http://192.168.1.20:8080`.
-  final String baseUrl;
+  /// Mutable so the app can point the same long-lived client at a new
+  /// server address whenever the user edits it in Settings.
+  String baseUrl;
   final http.Client _client;
 
   ApiClient({required this.baseUrl, http.Client? client}) : _client = client ?? http.Client();

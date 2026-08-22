@@ -13,6 +13,7 @@ class PrefsKeys {
   static const String themeMode = 'theme_mode';
   static const String authToken = 'auth_token';
   static const String lastSimulatorId = 'last_simulator_id';
+  static const String onboardingComplete = 'onboarding_complete';
 }
 
 class AppDefaults {

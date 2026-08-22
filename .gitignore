@@ -90,3 +90,11 @@ temp/
 *.tmp
 
 ./companion/web/
+./companion/build/
+./companion/.dart_tool/
+./companion/android/
+./companion/ios/
+./companion/.idea/
+./companion/linux/
+./companion/macos/
+./companion/windows/

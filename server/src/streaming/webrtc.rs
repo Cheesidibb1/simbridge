@@ -1,14 +1,14 @@
 // Complete WebRTC signaling and video streaming for SimBridge
 
-use std::collections::HashMap;
-use thiserror::Error;
-use std::sync::Arc;
-use tokio::sync::{RwLock, broadcast};
-use uuid::Uuid;
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use simbridge_shared::protocol::StreamQuality;
 use crate::streaming::encoder::VideoCodec;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use simbridge_shared::protocol::StreamQuality;
+use std::collections::HashMap;
+use std::sync::Arc;
+use thiserror::Error;
+use tokio::sync::{broadcast, RwLock};
+use uuid::Uuid;
 
 /// WebRTC signaling message types
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,7 +98,7 @@ impl WebRTCSignalingManager {
         stream_id: String,
     ) -> Result<Uuid, WebRTCError> {
         let session_id = Uuid::new_v4();
-        
+
         let session = WebRTCSession {
             id: session_id,
             stream_id,
@@ -115,7 +115,7 @@ impl WebRTCSignalingManager {
 
         let mut sessions = self.sessions.write().await;
         sessions.insert(session_id.clone(), session);
-        
+
         Ok(session_id)
     }
 
@@ -133,13 +133,13 @@ impl WebRTCSignalingManager {
         stream_id: String,
     ) -> Result<(), WebRTCError> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(&session_id) {
             session.session_state = WebRTCSessionState::OfferReceived;
             session.offer_sdp = Some(sdp);
             session.stream_id = stream_id;
             session.last_activity = Utc::now();
-            
+
             Ok(())
         } else {
             Err(WebRTCError::SessionNotFound)
@@ -147,18 +147,14 @@ impl WebRTCSignalingManager {
     }
 
     /// Generate and send answer to client
-    pub async fn handle_answer(
-        &self,
-        session_id: Uuid,
-        sdp: String,
-    ) -> Result<(), WebRTCError> {
+    pub async fn handle_answer(&self, session_id: Uuid, sdp: String) -> Result<(), WebRTCError> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(&session_id) {
             session.session_state = WebRTCSessionState::NegotiationNeeded;
             session.answer_sdp = Some(sdp);
             session.last_activity = Utc::now();
-            
+
             Ok(())
         } else {
             Err(WebRTCError::SessionNotFound)
@@ -174,7 +170,7 @@ impl WebRTCSignalingManager {
         sdp_mline_index: u16,
     ) -> Result<(), WebRTCError> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(&session_id) {
             session.ice_candidates.push(IceCandidate {
                 candidate,
@@ -182,7 +178,7 @@ impl WebRTCSignalingManager {
                 sdp_mline_index,
             });
             session.last_activity = Utc::now();
-            
+
             Ok(())
         } else {
             Err(WebRTCError::SessionNotFound)
@@ -192,14 +188,14 @@ impl WebRTCSignalingManager {
     /// Mark session as connected (after SDP exchange complete)
     pub async fn mark_connected(&self, session_id: Uuid) -> Result<(), WebRTCError> {
         let mut sessions = self.sessions.write().await;
-        
+
         if let Some(session) = sessions.get_mut(&session_id) {
             if matches!(session.session_state, WebRTCSessionState::NegotiationNeeded) {
                 session.session_state = WebRTCSessionState::Connected;
                 session.connected_at = Some(Utc::now());
                 session.last_activity = Utc::now();
             }
-            
+
             Ok(())
         } else {
             Err(WebRTCError::SessionNotFound)
@@ -209,7 +205,8 @@ impl WebRTCSignalingManager {
     /// Get all active sessions (connected state)
     pub async fn get_active_sessions(&self) -> Vec<WebRTCSession> {
         let sessions = self.sessions.read().await;
-        sessions.values()
+        sessions
+            .values()
             .filter(|s| matches!(s.session_state, WebRTCSessionState::Connected))
             .cloned()
             .collect()
@@ -218,7 +215,7 @@ impl WebRTCSignalingManager {
     /// Close a session
     pub async fn close_session(&self, session_id: Uuid) -> Result<(), WebRTCError> {
         let mut sessions = self.sessions.write().await;
-        
+
         if sessions.remove(&session_id).is_some() {
             Ok(())
         } else {
@@ -229,7 +226,7 @@ impl WebRTCSignalingManager {
     /// Get session statistics
     pub async fn get_session_stats(&self, session_id: Uuid) -> Option<WebRTCSessionStats> {
         let sessions = self.sessions.read().await;
-        
+
         if let Some(session) = sessions.get(&session_id) {
             let duration_ms = if let Some(started) = session.connected_at {
                 (Utc::now() - started).num_milliseconds() as u64
@@ -271,16 +268,16 @@ pub struct WebRTCSessionStats {
 pub enum WebRTCError {
     #[error("Session not found")]
     SessionNotFound,
-    
+
     #[error("Connection closed")]
     ConnectionClosed,
-    
+
     #[error("Invalid SDP format")]
     InvalidSDP,
-    
+
     #[error("ICE candidate rejected")]
     ICECandidateRejected,
-    
+
     #[error("Signaling error: {0}")]
     SignalingError(String),
 }
@@ -306,7 +303,7 @@ impl FrameDeliverySystem {
     ) -> Result<tokio::sync::mpsc::Sender<Vec<u8>>, FrameDeliveryError> {
         // Try to get existing sender
         let mut senders = self.active_senders.write().await;
-        
+
         if let Some(sender) = senders.get(&stream_id) {
             let sender_clone = sender.clone();
             drop(senders);
@@ -316,14 +313,18 @@ impl FrameDeliverySystem {
         // Create new sender
         let (tx, _rx) = tokio::sync::mpsc::channel(capacity);
         senders.insert(stream_id.clone(), tx.clone());
-        
+
         Ok(tx)
     }
 
     /// Send frame data to all active receivers for a stream
-    pub async fn broadcast_frame(&self, stream_id: String, frame_data: Vec<u8>) -> Result<usize, FrameDeliveryError> {
+    pub async fn broadcast_frame(
+        &self,
+        stream_id: String,
+        frame_data: Vec<u8>,
+    ) -> Result<usize, FrameDeliveryError> {
         let mut senders = self.active_senders.write().await;
-        
+
         if let Some(sender) = senders.get(&stream_id) {
             let len = frame_data.len();
             let sent = sender.send(frame_data).await.is_ok();
@@ -371,12 +372,13 @@ impl SignalingHandler {
         sdp: String,
     ) -> Result<WebRTCSignal, WebRTCError> {
         // Store the offer
-        manager.handle_offer(session_id.clone(), sdp.clone(), stream_id.clone())
+        manager
+            .handle_offer(session_id.clone(), sdp.clone(), stream_id.clone())
             .await?;
 
         // In real implementation, generate answer SDP here
         // For now, return the stored offer (placeholder)
-        
+
         Ok(WebRTCSignal::Answer {
             sdp: sdp, // Placeholder - would generate in production
             session_id,
@@ -393,9 +395,10 @@ impl SignalingHandler {
         sdp_mid: Option<String>,
         sdp_mline_index: u16,
     ) -> Result<(), WebRTCError> {
-        manager.add_ice_candidate(session_id, candidate, sdp_mid, sdp_mline_index)
+        manager
+            .add_ice_candidate(session_id, candidate, sdp_mid, sdp_mline_index)
             .await?;
-        
+
         Ok(())
     }
 
@@ -421,7 +424,7 @@ impl Default for WebRTCConfig {
     fn default() -> Self {
         Self {
             stun_servers: vec![
-                "stun:stun.l.google.com:19302".to_string(), // Google STUN
+                "stun:stun.l.google.com:19302".to_string(),  // Google STUN
                 "stun:stun1.l.google.com:19302".to_string(), // Backup
             ],
             turn_servers: Vec::new(), // TURN requires credential setup
@@ -447,12 +450,15 @@ mod tests {
     #[tokio::test]
     async fn test_session_creation() {
         let manager = WebRTCSignalingManager::new();
-        
-        let session_id = manager.create_session(
-            "sim-1".to_string(),
-            "device-1".to_string(),
-            "stream-1".to_string(),
-        ).await.unwrap();
+
+        let session_id = manager
+            .create_session(
+                "sim-1".to_string(),
+                "device-1".to_string(),
+                "stream-1".to_string(),
+            )
+            .await
+            .unwrap();
 
         assert!(manager.get_session(session_id).is_some());
     }
@@ -460,12 +466,14 @@ mod tests {
     #[tokio::test]
     async fn test_offer_handling() {
         let manager = WebRTCSignalingManager::new();
-        
+
         let session_id = Uuid::new_v4();
         let sdp = "v=0\r\no=- 1234567890 1234567890 IN IP4 127.0.0.1";
 
-        manager.handle_offer(session_id.clone(), sdp.to_string(), "stream-1".to_string())
-            .await.unwrap();
+        manager
+            .handle_offer(session_id.clone(), sdp.to_string(), "stream-1".to_string())
+            .await
+            .unwrap();
 
         assert!(manager.get_session(session_id).is_some());
     }
@@ -473,21 +481,27 @@ mod tests {
     #[tokio::test]
     async fn test_ice_candidate() {
         let manager = WebRTCSignalingManager::new();
-        
-        let session_id = manager.create_session(
-            "sim-1".to_string(),
-            "device-1".to_string(),
-            "stream-1".to_string(),
-        ).await.unwrap();
+
+        let session_id = manager
+            .create_session(
+                "sim-1".to_string(),
+                "device-1".to_string(),
+                "stream-1".to_string(),
+            )
+            .await
+            .unwrap();
 
         let candidate = "candidate:1 1 UDP 100 192.168.1.1 5000 typ host";
-        
-        manager.add_ice_candidate(
-            session_id.clone(),
-            candidate.to_string(),
-            Some("audio".to_string()),
-            0,
-        ).await.unwrap();
+
+        manager
+            .add_ice_candidate(
+                session_id.clone(),
+                candidate.to_string(),
+                Some("audio".to_string()),
+                0,
+            )
+            .await
+            .unwrap();
 
         let stats = manager.get_session_stats(session_id).await.unwrap();
         assert_eq!(stats.num_ice_candidates, 1);
@@ -496,18 +510,22 @@ mod tests {
     #[tokio::test]
     async fn test_frame_delivery() {
         let delivery = FrameDeliverySystem::new();
-        
+
         let stream_id = "stream-1".to_string();
-        
+
         // Create sender with capacity of 10 frames
-        let tx = delivery.get_or_create_sender(stream_id.clone(), 10)
-            .await.unwrap();
+        let tx = delivery
+            .get_or_create_sender(stream_id.clone(), 10)
+            .await
+            .unwrap();
 
         // Send test frame (1KB PNG)
         let frame_data = vec![1, 2, 3, 4, 5; 1024];
-        
-        let sent_frames = delivery.broadcast_frame(stream_id, frame_data)
-            .await.unwrap();
+
+        let sent_frames = delivery
+            .broadcast_frame(stream_id, frame_data)
+            .await
+            .unwrap();
 
         assert_eq!(sent_frames, frame_data.len());
     }
@@ -515,12 +533,15 @@ mod tests {
     #[tokio::test]
     async fn test_session_statistics() {
         let manager = WebRTCSignalingManager::new();
-        
-        let session_id = manager.create_session(
-            "sim-1".to_string(),
-            "device-1".to_string(),
-            "stream-1".to_string(),
-        ).await.unwrap();
+
+        let session_id = manager
+            .create_session(
+                "sim-1".to_string(),
+                "device-1".to_string(),
+                "stream-1".to_string(),
+            )
+            .await
+            .unwrap();
 
         // Mark as connected after some time
         let now = Utc::now() - Duration::seconds(30);

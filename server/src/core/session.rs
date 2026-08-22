@@ -1,15 +1,15 @@
 // Session management
 
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use simbridge_shared::{
     models::{Session, SessionStats, SessionStreamConfig as StreamConfig},
     protocol::SessionStatus,
 };
+use std::collections::HashMap;
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::RwLock;
+use uuid::Uuid;
 
 /// Session manager
 pub struct SessionManager {
@@ -33,13 +33,13 @@ impl SessionManager {
         stream_config: StreamConfig,
     ) -> Result<Session, SessionError> {
         let sessions = self.sessions.read().await;
-        
+
         if sessions.len() >= self.max_sessions as usize {
             return Err(SessionError::MaxSessionsReached);
         }
-        
+
         drop(sessions);
-        
+
         let session = Session {
             id: Uuid::new_v4(),
             device_id,
@@ -54,7 +54,7 @@ impl SessionManager {
 
         let mut sessions = self.sessions.write().await;
         sessions.insert(session.id, session.clone());
-        
+
         Ok(session)
     }
 
@@ -116,7 +116,8 @@ impl SessionManager {
     /// Remove a session
     pub async fn remove_session(&self, session_id: Uuid) -> Result<(), SessionError> {
         let mut sessions = self.sessions.write().await;
-        sessions.remove(&session_id)
+        sessions
+            .remove(&session_id)
             .map(|_| ())
             .ok_or(SessionError::NotFound)
     }
@@ -125,7 +126,7 @@ impl SessionManager {
     pub async fn cleanup_inactive(&self, timeout_seconds: i64) {
         let mut sessions = self.sessions.write().await;
         let now = Utc::now();
-        
+
         sessions.retain(|_, session| {
             let inactive_duration = now.signed_duration_since(session.last_activity);
             inactive_duration.num_seconds() < timeout_seconds
@@ -144,13 +145,13 @@ impl SessionManager {
 pub enum SessionError {
     #[error("Session not found")]
     NotFound,
-    
+
     #[error("Maximum sessions reached")]
     MaxSessionsReached,
-    
+
     #[error("Session already exists")]
     AlreadyExists,
-    
+
     #[error("Session is inactive")]
     Inactive,
 }
