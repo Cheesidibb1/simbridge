@@ -84,7 +84,7 @@ SimBridge consists of four major components:
 - Rust 1.70+ (for server)
 - Flutter 3.16+ (for companion app and desktop dashboard)
 - Xcode 15+ (for iOS Simulator support, macOS only)
-- Android Studio with Emulator (for Android Emulator support)
+- Android Studio with Emulator (for Android Emulator support, add the platform-tools folder to PATH)
 - **WebRTC enabled browser** (Chrome, Firefox, Edge recommended)
 
 ### Installation
