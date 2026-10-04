@@ -16,6 +16,12 @@ enum WsConnectionState { disconnected, connecting, connected, reconnecting }
 /// - reconnection with the doc's prescribed exponential backoff
 ///   (1s initial, 30s ceiling), via [Backoff]
 ///
+/// Mobile Safari (and any phone browser) suspends sockets when the screen
+/// locks or the tab is backgrounded, often *without* firing `onDone`, which
+/// would leave the UI showing "connected" on a dead socket. Two guards cover
+/// that: a staleness watchdog on the ping timer, and [probe], which the app
+/// calls when it returns to the foreground.
+///
 /// It deliberately does *not* know about simulators, sessions, or auth —
 /// [onConnected] is the hook callers use to replay whatever handshake
 /// messages (auth, `ConnectSimulator`) are needed after a fresh connection.
@@ -33,7 +39,9 @@ class WebSocketService {
   WebSocketChannel? _channel;
   StreamSubscription<dynamic>? _channelSub;
   Timer? _pingTimer;
+  Timer? _probeTimer;
   Timer? _reconnectTimer;
+  DateTime _lastRxAt = DateTime.now();
   bool _shouldReconnect = false;
   bool _disposed = false;
 
@@ -78,6 +86,7 @@ class WebSocketService {
         cancelOnError: true,
       );
       _backoff.reset();
+      _lastRxAt = DateTime.now();
       _setState(WsConnectionState.connected);
       _startPingTimer();
       onConnected?.call();
@@ -88,6 +97,7 @@ class WebSocketService {
   }
 
   void _handleRaw(dynamic raw) {
+    _lastRxAt = DateTime.now();
     try {
       final text = raw is String ? raw : utf8.decode(raw as List<int>);
       final decoded = jsonDecode(text) as Map<String, dynamic>;
@@ -136,13 +146,46 @@ class WebSocketService {
   void _startPingTimer() {
     _pingTimer?.cancel();
     _pingTimer = Timer.periodic(AppDefaults.pingInterval, (_) {
+      // The server answers every message (Pong at minimum), so three silent
+      // ping intervals means the socket is dead even if no close event arrived.
+      if (DateTime.now().difference(_lastRxAt) > AppDefaults.pingInterval * 3) {
+        _forceReconnect('no data for ${AppDefaults.pingInterval.inSeconds * 3}s');
+        return;
+      }
       send(WsMessage.outgoing(type: WsMessageType.ping));
     });
+  }
+
+  /// Checks that a socket that *claims* to be connected really is, e.g. right
+  /// after the app returns to the foreground. Sends a ping; if nothing at all
+  /// arrives within [timeout], the connection is torn down and re-established.
+  void probe({Duration timeout = const Duration(seconds: 4)}) {
+    if (_state != WsConnectionState.connected) return;
+    final sentAt = DateTime.now();
+    send(WsMessage.outgoing(type: WsMessageType.ping));
+    _probeTimer?.cancel();
+    _probeTimer = Timer(timeout, () {
+      if (_state == WsConnectionState.connected && _lastRxAt.isBefore(sentAt)) {
+        _forceReconnect('no reply to probe');
+      }
+    });
+  }
+
+  void _forceReconnect(String reason) {
+    _log.warn('Forcing reconnect: $reason');
+    final channel = _channel;
+    _teardownChannel();
+    if (channel != null) {
+      unawaited(channel.sink.close());
+    }
+    _scheduleReconnect();
   }
 
   void _teardownChannel() {
     _pingTimer?.cancel();
     _pingTimer = null;
+    _probeTimer?.cancel();
+    _probeTimer = null;
     final sub = _channelSub;
     _channelSub = null;
     _channel = null;

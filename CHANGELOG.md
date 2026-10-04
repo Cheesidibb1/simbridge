@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added - iPhone Safari support
+- Companion web build runs in iOS Safari and as an "Add to Home Screen" app (see `docs/IPHONE_SAFARI.md`)
+  - `companion/web/index.html`: iOS viewport / standalone metas, touch + callout + overscroll CSS, Safari
+    pinch-zoom cancellation, loading splash with a stuck-load hint; `manifest.json` renamed and unlocked from portrait
+  - `PlatformDefaults`: on web, first-run server host/port/TLS follow the page URL (`localhost` is the phone itself);
+    TLS is forced on when the page is https (mixed-content rule); unit tests in `test/utils/platform_defaults_test.dart`
+  - WebSocket staleness watchdog and foreground `probe()` so a socket suspended by iOS reconnects instead of freezing
+  - Clipboard "paste from this device" fails soft in Safari / insecure contexts; image cache capped on web
+  - URL keyboard and no autocorrect on the server host field
+- Server serves the built web app (`--web-dir` / `SIMBRIDGE_WEB_DIR` / auto-detect `companion/build/web`),
+  prints the iPhone URL at startup, adds CORS with explicit method/header lists (`--no-cors` to disable),
+  serves `/test-webrtc`, and shows a setup page at `/` when no build exists
+- `scripts/build-web.sh` (bundles CanvasKit for offline LANs) and `scripts/serve-for-iphone.sh`
+
+### Fixed
+- `server/test-webrtc.html` now works, including in Safari: binary WebSocket frames are decoded, offers declare
+  receive-only transceivers (Safari emits no media section otherwise), the protocol envelope matches the server,
+  and the scope / API-name bugs (`pc`, `addCandidate`, `sdpMlineIndex`, `getVideoTracks`) are corrected
+
+
 ### Added - v0.5.0 (Planned)
 - Session recording and replay functionality
 - Advanced multi-simulator support

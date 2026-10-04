@@ -1,12 +1,14 @@
 {
-    "name": "simbridge_client",
-    "short_name": "simbridge_client",
+    "name": "SimBridge",
+    "short_name": "SimBridge",
+    "id": "/",
     "start_url": ".",
+    "scope": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "background_color": "#111318",
+    "theme_color": "#3F51B5",
+    "description": "SimBridge companion: mirror and control an iOS Simulator or Android Emulator from your phone.",
+    "orientation": "any",
     "prefer_related_applications": false,
     "icons": [
         {

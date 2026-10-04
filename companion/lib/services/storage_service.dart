@@ -1,6 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../utils/constants.dart';
+import '../utils/platform_defaults.dart';
 
 /// Thin, typed wrapper over [SharedPreferences] so the rest of the app
 /// never touches raw string keys directly.
@@ -14,13 +15,18 @@ class StorageService {
     return StorageService(prefs);
   }
 
-  String get serverHost => _prefs.getString(PrefsKeys.serverHost) ?? AppDefaults.serverHost;
+  // First-run defaults come from PlatformDefaults: unchanged on native builds,
+  // but in a browser (iPhone Safari) they follow the address the page was
+  // loaded from, since "localhost" would mean the phone itself.
+  String get serverHost =>
+      _prefs.getString(PrefsKeys.serverHost) ?? PlatformDefaults.current.host;
   Future<void> setServerHost(String value) => _prefs.setString(PrefsKeys.serverHost, value);
 
-  int get serverPort => _prefs.getInt(PrefsKeys.serverPort) ?? AppDefaults.serverPort;
+  int get serverPort =>
+      _prefs.getInt(PrefsKeys.serverPort) ?? PlatformDefaults.current.port;
   Future<void> setServerPort(int value) => _prefs.setInt(PrefsKeys.serverPort, value);
 
-  bool get useTls => _prefs.getBool(PrefsKeys.useTls) ?? AppDefaults.useTls;
+  bool get useTls => _prefs.getBool(PrefsKeys.useTls) ?? PlatformDefaults.current.tls;
   Future<void> setUseTls(bool value) => _prefs.setBool(PrefsKeys.useTls, value);
 
   String? get deviceId => _prefs.getString(PrefsKeys.deviceId);

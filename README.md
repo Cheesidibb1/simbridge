@@ -35,6 +35,26 @@ Make an iPhone or Android phone act as a companion device for iOS Simulators and
 
 ---
 
+## 📱 iPhone Safari support
+
+The Flutter companion also runs **in Safari on an iPhone**, with no App Store or signing. The server serves the
+web app itself:
+
+```bash
+./scripts/build-web.sh          # once: builds companion/build/web
+./scripts/serve-for-iphone.sh   # starts the server and prints the URL to open on the iPhone
+```
+
+The server protects simulator control with a password. It prints a generated password when it starts; set
+`SIMBRIDGE_PASSWORD` to a value of at least 12 characters before launch to use your own. The companion asks for the
+password when connecting and does not save it.
+
+Open the printed `http://<ip>:8080/` in Safari on the same Wi-Fi, then **Share ▸ Add to Home Screen**.
+Full details, the list of changes and their reasons, troubleshooting and verification status are in
+[docs/IPHONE_SAFARI.md](docs/IPHONE_SAFARI.md).
+
+---
+
 ## Features
 
 - ✅ **Remote Control**: Control iOS Simulators and Android Emulators from your phone
@@ -85,7 +105,7 @@ SimBridge consists of four major components:
 - Flutter 3.16+ (for companion app and desktop dashboard)
 - Xcode 15+ (for iOS Simulator support, macOS only)
 - Android Studio with Emulator (for Android Emulator support, add the platform-tools folder to PATH)
-- **WebRTC enabled browser** (Chrome, Firefox, Edge recommended)
+- **WebRTC enabled browser** (Chrome, Firefox, Edge, or Safari on iPhone / Mac)
 
 ### Installation
 

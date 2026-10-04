@@ -63,6 +63,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const _SectionHeader('Server'),
           TextField(
             controller: _hostController,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            enableSuggestions: false,
+            textCapitalization: TextCapitalization.none,
             decoration:
                 const InputDecoration(labelText: 'Host or IP', border: OutlineInputBorder()),
             onSubmitted: (_) => _saveServer(settings),
@@ -77,12 +81,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Use TLS (wss:// / https://)'),
-            value: settings.useTls,
-            onChanged: (value) => settings.updateServer(
-              host: _hostController.text.trim(),
-              port: int.tryParse(_portController.text.trim()) ?? settings.serverPort,
-              tls: value,
-            ),
+            // A page loaded over https can't open insecure sockets (Safari
+            // blocks mixed content), so the switch is locked on.
+            subtitle: settings.tlsRequired
+                ? const Text('Required: this page was loaded over https')
+                : null,
+            value: settings.effectiveTls,
+            onChanged: settings.tlsRequired
+                ? null
+                : (value) => settings.updateServer(
+                      host: _hostController.text.trim(),
+                      port: int.tryParse(_portController.text.trim()) ?? settings.serverPort,
+                      tls: value,
+                    ),
           ),
           const SizedBox(height: 4),
           FilledButton(

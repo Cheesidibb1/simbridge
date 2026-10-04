@@ -60,6 +60,7 @@ pub enum MessageType {
 
     // Server → Client messages (unique names only)
     PairResponse,
+    AuthChallenge,
     AuthResponse,
     ScreenFrame,
     Notification,

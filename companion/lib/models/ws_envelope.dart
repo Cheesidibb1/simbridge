@@ -25,6 +25,7 @@ enum WsMessageType {
 
   // Server -> Client
   pairResponse('pair_response'),
+  authChallenge('auth_challenge'),
   authResponse('auth_response'),
   screenFrame('screen_frame'),
   notification('notification'),

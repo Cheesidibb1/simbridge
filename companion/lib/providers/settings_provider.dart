@@ -3,6 +3,7 @@ import 'package:uuid/uuid.dart';
 
 import '../models/session.dart';
 import '../services/storage_service.dart';
+import '../utils/platform_defaults.dart';
 
 /// Holds the user-editable connection and stream settings, persisting each
 /// change through [StorageService]. Created once at startup via [load] so
@@ -56,10 +57,19 @@ class SettingsProvider extends ChangeNotifier {
     );
   }
 
-  String get httpBaseUrl => '${useTls ? 'https' : 'http'}://$serverHost:$serverPort';
+  /// True when the browser forces TLS regardless of the saved switch: a page
+  /// loaded over https cannot open ws:// or http:// connections (Safari blocks
+  /// mixed content outright). Always false on native builds.
+  bool get tlsRequired => PlatformDefaults.current.tlsRequired;
+
+  /// What is actually used on the wire: the saved switch, unless the browser
+  /// leaves no choice.
+  bool get effectiveTls => useTls || tlsRequired;
+
+  String get httpBaseUrl => '${effectiveTls ? 'https' : 'http'}://$serverHost:$serverPort';
 
   Uri get wsUri => Uri(
-        scheme: useTls ? 'wss' : 'ws',
+        scheme: effectiveTls ? 'wss' : 'ws',
         host: serverHost,
         port: serverPort,
         path: '/ws',

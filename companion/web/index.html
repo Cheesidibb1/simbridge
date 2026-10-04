@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <!--
     If you are serving your web app in a path other than the root, change the
@@ -8,31 +8,198 @@
     The path provided below has to start and end with a slash "/" in order for
     it to work correctly.
 
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
     This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
+    the `--base-href` argument provided to `flutter build`. (scripts/build-web.sh
+    passes "/", which is what the SimBridge server serves the app from.)
   -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+  <meta name="description" content="SimBridge companion: mirror and control an iOS Simulator or Android Emulator from your phone.">
 
-  <!-- iOS meta tags & icons -->
+  <!--
+    iPhone / Safari
+    ---------------
+    * viewport: width=device-width + maximum-scale=1 stops iOS Safari from
+      auto-zooming into text fields on focus (it zooms when a focused input is
+      under 16px and the page is zoomable). user-scalable=no is ignored by
+      iOS 10+, so pinch-zoom is blocked separately by the gesture handlers below.
+    * We deliberately do NOT set viewport-fit=cover: Flutter web does not read
+      env(safe-area-inset-*), so opting in to edge-to-edge would put the app bar
+      under the notch / status bar and the bottom buttons under the home
+      indicator. Without it Safari keeps the app inside the safe area for us.
+  -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="format-detection" content="telephone=no">
+  <meta name="theme-color" content="#3F51B5">
+  <meta name="color-scheme" content="light dark">
+
+  <!-- "Add to Home Screen" (standalone, no Safari chrome) -->
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="simbridge_client">
+  <meta name="apple-mobile-web-app-title" content="SimBridge">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>simbridge_client</title>
+  <title>SimBridge</title>
   <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* ---- Page chrome: make the canvas feel like a native app on iOS ---- */
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: #111318;
+      overflow: hidden;
+      /* No rubber-band scroll / pull-to-refresh behind the app. */
+      overscroll-behavior: none;
+      /* Don't let iOS inflate text after rotating the phone. */
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      /* No grey tap flash, no long-press callout (Copy / Save Image sheet),
+         no text-selection magnifier while holding on the screen mirror. */
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+      /* Taps are instant (no 300ms double-tap-to-zoom wait) and Safari never
+         starts a page pan / pinch of its own. Flutter does all gesture work. */
+      touch-action: none;
+    }
+
+    /* Real <input>/<textarea> elements Flutter creates for text fields must
+       stay selectable and use a >=16px font, otherwise iOS zooms the page. */
+    input, textarea {
+      -webkit-user-select: text;
+      user-select: text;
+      font-size: 16px;
+    }
+
+    /* ---- Loading splash (CanvasKit is ~2MB of wasm; on a phone that takes a moment) ---- */
+    #sb-splash {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      background: #111318;
+      color: #e3e5ee;
+      font: 500 15px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", Helvetica, Arial, sans-serif;
+      text-align: center;
+      padding: 24px;
+      box-sizing: border-box;
+      z-index: 10;
+      transition: opacity .25s ease;
+    }
+    #sb-splash.sb-hide { opacity: 0; pointer-events: none; }
+    #sb-splash img { width: 72px; height: 72px; border-radius: 16px; }
+    #sb-spinner {
+      width: 28px;
+      height: 28px;
+      border: 3px solid rgba(255,255,255,.18);
+      border-top-color: #8c9eff;
+      border-radius: 50%;
+      animation: sb-spin 0.9s linear infinite;
+    }
+    @keyframes sb-spin { to { transform: rotate(360deg); } }
+    #sb-msg { max-width: 320px; color: #aab0c4; font-weight: 400; }
+    #sb-msg b { color: #ffb4a9; }
+    #sb-reload {
+      display: none;
+      margin-top: 4px;
+      padding: 12px 22px;
+      border: 0;
+      border-radius: 12px;
+      background: #8c9eff;
+      color: #0b1030;
+      font: 600 16px -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
+      touch-action: manipulation;
+    }
+  </style>
 </head>
 <body>
+  <!-- Shown until Flutter paints its first frame (see script below). -->
+  <div id="sb-splash" role="status" aria-live="polite">
+    <img src="icons/Icon-192.png" alt="" width="72" height="72">
+    <div id="sb-spinner"></div>
+    <div id="sb-msg">Loading SimBridge…</div>
+    <button id="sb-reload" type="button" onclick="location.reload()">Reload</button>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // ---------------------------------------------------------------
+      // 1. Stop Safari's own pinch-zoom. iOS ignores user-scalable=no, but
+      //    it fires non-standard gesture* events for the pinch; cancelling
+      //    them keeps pinch available to Flutter (the screen mirror turns
+      //    a two-finger pinch into a simulator pinch gesture).
+      // ---------------------------------------------------------------
+      ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (name) {
+        document.addEventListener(name, function (e) { e.preventDefault(); }, { passive: false });
+      });
+
+      // Double-tap-to-zoom is already off via `touch-action: none` in the CSS
+      // above. A touchend/preventDefault hack is intentionally NOT used: it
+      // can swallow the tap that focuses a text field on iOS.
+
+      // ---------------------------------------------------------------
+      // 2. Splash handling.
+      // ---------------------------------------------------------------
+      var splash = document.getElementById('sb-splash');
+      var msg = document.getElementById('sb-msg');
+      var reload = document.getElementById('sb-reload');
+      var painted = false;
+
+      function hideSplash() {
+        if (painted) return;
+        painted = true;
+        splash.classList.add('sb-hide');
+        setTimeout(function () { if (splash.parentNode) splash.parentNode.removeChild(splash); }, 400);
+      }
+
+      function showProblem(html) {
+        document.getElementById('sb-spinner').style.display = 'none';
+        msg.innerHTML = html;
+        reload.style.display = 'inline-block';
+      }
+
+      // Flutter dispatches this on `window` once the first frame is on screen.
+      window.addEventListener('flutter-first-frame', hideSplash);
+
+      // WebAssembly is required by CanvasKit. Present on every iOS the
+      // current Flutter supports; if it is missing, say so instead of
+      // leaving a spinner running forever.
+      if (typeof WebAssembly !== 'object') {
+        showProblem('<b>This browser can\'t run SimBridge.</b><br>Update to a recent iOS (16 or newer) and open this page in Safari.');
+      } else {
+        // If nothing has painted after 30s, the usual causes on a phone are:
+        // wrong server address, Wi-Fi sleep, or a blocked / cached asset.
+        setTimeout(function () {
+          if (!painted) {
+            showProblem('Still loading… If this never finishes, check that your iPhone is on the same Wi-Fi as the SimBridge server, then reload.');
+          }
+        }, 30000);
+      }
+
+      // Surface uncaught startup errors on the splash rather than a blank page.
+      window.addEventListener('error', function (e) {
+        if (!painted && e && e.message) {
+          showProblem('<b>Couldn\'t start.</b><br>' + String(e.message).replace(/</g, '&lt;'));
+        }
+      });
+    })();
+  </script>
+
   <!--
     You can customize the "flutter_bootstrap.js" script.
     This is useful to provide a custom configuration to the Flutter loader

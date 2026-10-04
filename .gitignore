@@ -98,3 +98,5 @@ temp/
 ./companion/linux/
 ./companion/macos/
 ./companion/windows/
+# Flutter web build output served by the server (scripts/build-web.sh)
+/companion/build/

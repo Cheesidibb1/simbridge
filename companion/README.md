@@ -45,6 +45,13 @@ flutter test
 
 ---
 
+## 📱 Running in iPhone Safari
+
+This project's `web/` target is tuned for iOS Safari. Build with `../scripts/build-web.sh`, start the server, and
+open its URL on the phone. See [`../docs/IPHONE_SAFARI.md`](../docs/IPHONE_SAFARI.md).
+
+---
+
 ## One-time setup (do this first)
 
 I've delivered the Dart **source** (`lib/`, `test/`, `pubspec.yaml`,

@@ -25,7 +25,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _hostController = TextEditingController(text: settings.serverHost);
     _portController = TextEditingController(text: settings.serverPort.toString());
     _nameController = TextEditingController(text: settings.deviceName);
-    _useTls = settings.useTls;
+    _useTls = settings.effectiveTls;
   }
 
   @override
@@ -86,6 +86,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     const SizedBox(height: 28),
                     TextFormField(
                       controller: _hostController,
+                      // iOS keyboards otherwise capitalise the first letter and
+                      // "correct" IP addresses / hostnames.
+                      keyboardType: TextInputType.url,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      textCapitalization: TextCapitalization.none,
                       decoration: const InputDecoration(
                         labelText: 'Server host or IP',
                         hintText: '192.168.1.20',
@@ -127,8 +133,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Use TLS (wss:// / https://)'),
+                      // A page loaded over https can't open insecure sockets
+                      // (Safari blocks mixed content), so the switch is locked on.
+                      subtitle: context.read<SettingsProvider>().tlsRequired
+                          ? const Text('Required: this page was loaded over https')
+                          : null,
                       value: _useTls,
-                      onChanged: (value) => setState(() => _useTls = value),
+                      onChanged: context.read<SettingsProvider>().tlsRequired
+                          ? null
+                          : (value) => setState(() => _useTls = value),
                     ),
                     const SizedBox(height: 20),
                     FilledButton.icon(

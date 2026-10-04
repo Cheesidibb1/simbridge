@@ -143,12 +143,25 @@ All WebSocket messages follow this structure:
 
 ##### Auth Request
 
+The server first sends an `auth_challenge` with a per-connection nonce:
+
+```json
+{
+  "message_type": "auth_challenge",
+  "payload": { "challenge": "<random-per-connection-nonce>" }
+}
+```
+
+Reply with the lowercase hexadecimal HMAC-SHA256 of that nonce, keyed by the server password. The password is never
+sent over the WebSocket. The server responds with `auth_response` and accepts other messages only after success.
+
 ```json
 {
   "message_type": "auth_request",
   "payload": {
     "device_id": "device-123",
-    "token": "auth-token"
+    "token": "",
+    "challenge_response": "<hmac-sha256-hex>"
   }
 }
 ```

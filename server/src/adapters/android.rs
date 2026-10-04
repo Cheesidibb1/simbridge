@@ -394,12 +394,13 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
     }
 
     async fn set_location(&mut self, location: GpsLocation) -> Result<(), AdapterError> {
-        // Use adb geo fix to set location
+        // Use the emulator console command to set its location.
         let lat = location.latitude;
         let lon = location.longitude;
         let alt = location.altitude.unwrap_or(0.0);
 
         self.run_adb_command(&[
+            "emu",
             "geo",
             "fix",
             &lon.to_string(),

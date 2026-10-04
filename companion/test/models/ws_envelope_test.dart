@@ -58,6 +58,7 @@ void main() {
         WsMessageType.getRecordings: 'get_recordings',
         WsMessageType.ping: 'ping',
         WsMessageType.pairResponse: 'pair_response',
+        WsMessageType.authChallenge: 'auth_challenge',
         WsMessageType.authResponse: 'auth_response',
         WsMessageType.screenFrame: 'screen_frame',
         WsMessageType.notification: 'notification',

@@ -12,9 +12,12 @@ use axum::{
 use base64::Engine;
 use futures::sink::SinkExt;
 use futures::stream::StreamExt;
+use hmac::{Hmac, Mac};
+use sha2::Sha256;
 use simbridge_shared::protocol::{
-    deserialize_message, serialize_message, FrameEncoding, GesturePayload,
-    Message as ProtocolMessage, MessageType, ScreenFramePayload, TouchEventPayload,
+    deserialize_message, serialize_message, AuthRequestPayload, FrameEncoding, GesturePayload,
+    GpsUpdatePayload, Message as ProtocolMessage, MessageType, ScreenFramePayload,
+    TouchEventPayload,
 };
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -25,18 +28,21 @@ use tracing::{error, info};
 pub struct WebSocketServerState {
     // TODO: Add session manager, auth manager, etc.
     pub clients: Arc<RwLock<Vec<String>>>,
+    password: Arc<String>,
 }
 
 impl WebSocketServerState {
-    pub fn new() -> Self {
+    pub fn new(password: String) -> Self {
         Self {
             clients: Arc::new(RwLock::new(Vec::new())),
+            password: Arc::new(password),
         }
     }
 
-    pub fn with_webrtc_manager(_webrtc_manager: Arc<()>) -> Self {
+    pub fn with_webrtc_manager(_webrtc_manager: Arc<()>, password: String) -> Self {
         Self {
             clients: Arc::new(RwLock::new(Vec::new())),
+            password: Arc::new(password),
         }
     }
 }
@@ -54,8 +60,26 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
     let (mut sender, mut receiver) = socket.split();
     let (frame_sender, mut frame_receiver) = mpsc::unbounded_channel();
     let mut screen_refresh_task: Option<tokio::task::JoinHandle<()>> = None;
+    let challenge = uuid::Uuid::new_v4().simple().to_string();
+
+    let challenge_message = ProtocolMessage::new(
+        MessageType::AuthChallenge,
+        serde_json::json!({"challenge": challenge}),
+    );
+    match serialize_message(&challenge_message) {
+        Ok(serialized) => {
+            if sender.send(Message::Binary(serialized)).await.is_err() {
+                return;
+            }
+        }
+        Err(error) => {
+            error!("Failed to serialize authentication challenge: {}", error);
+            return;
+        }
+    }
 
     info!("WebSocket client connected");
+    let mut authenticated = false;
 
     // Add client to list
     {
@@ -90,8 +114,39 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
                             Ok(protocol_msg) => {
                                 info!("Received message: {:?}", protocol_msg.message_type);
 
-                                // Route based on message type
-                                let response = match protocol_msg.message_type {
+                                let mut close_after_response = false;
+                                let response = if !authenticated {
+                                    let request = if protocol_msg.message_type == MessageType::AuthRequest {
+                                        serde_json::from_value::<AuthRequestPayload>(protocol_msg.payload.clone()).ok()
+                                    } else {
+                                        None
+                                    };
+                                    let valid = request.as_ref().is_some_and(|request| {
+                                        verify_password_proof(
+                                            &state.password,
+                                            &challenge,
+                                            request.challenge_response.as_deref(),
+                                        )
+                                    });
+                                    if valid {
+                                        authenticated = true;
+                                        ProtocolMessage::new(
+                                            MessageType::AuthResponse,
+                                            serde_json::json!({"success": true}),
+                                        )
+                                    } else {
+                                        close_after_response = true;
+                                        ProtocolMessage::new(
+                                            MessageType::AuthResponse,
+                                            serde_json::json!({
+                                                "success": false,
+                                                "message": "Authentication failed",
+                                            }),
+                                        )
+                                    }
+                                } else {
+                                    // Route based on message type after authentication.
+                                    match protocol_msg.message_type {
                                     MessageType::ConnectSimulator => {
                                         if let Some(task) = screen_refresh_task.take() {
                                             task.abort();
@@ -127,6 +182,9 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
                                     MessageType::Gesture => {
                                         handle_gesture(&protocol_msg).await
                                     }
+                                    MessageType::GpsUpdate => {
+                                        handle_gps_update(&protocol_msg).await
+                                    }
                                     simbridge_shared::protocol::MessageType::WebrtcOffer => {
                                         // Handle WebRTC offer - forward to signaling handler
                                         handle_webrtc_offer(&protocol_msg).await
@@ -142,6 +200,7 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
                                             serde_json::json!({"status": "ok"})
                                         )
                                     }
+                                    }
                                 };
 
                                 match serialize_message(&response) {
@@ -155,6 +214,10 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
                                         error!("Failed to serialize response: {}", e);
                                         break;
                                     }
+                                }
+                                if close_after_response {
+                                    let _ = sender.send(Message::Close(None)).await;
+                                    break;
                                 }
                             }
                             Err(e) => {
@@ -189,6 +252,17 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
     }
 
     info!("WebSocket client disconnected");
+}
+
+fn verify_password_proof(password: &str, challenge: &str, proof: Option<&str>) -> bool {
+    let Some(proof) = proof.and_then(|value| hex::decode(value).ok()) else {
+        return false;
+    };
+    let Ok(mut mac) = Hmac::<Sha256>::new_from_slice(password.as_bytes()) else {
+        return false;
+    };
+    mac.update(challenge.as_bytes());
+    mac.verify_slice(&proof).is_ok()
 }
 
 async fn handle_touch_event(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
@@ -226,6 +300,25 @@ async fn handle_gesture(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
         Ok(Ok(())) => ProtocolMessage::new(MessageType::Pong, serde_json::json!({"status": "ok"})),
         Ok(Err(error)) => make_input_error(error.to_string()),
         Err(error) => make_input_error(format!("Gesture dispatch task failed: {}", error)),
+    }
+}
+
+async fn handle_gps_update(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
+    let payload = match serde_json::from_value::<GpsUpdatePayload>(protocol_msg.payload.clone()) {
+        Ok(payload) => payload,
+        Err(error) => return make_input_error(format!("Invalid GPS update: {}", error)),
+    };
+    let simulator_id = payload.simulator_id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        let mut adapter = AndroidEmulatorAdapter::new(simulator_id, String::new())
+            .with_adb_path(resolve_adb_path());
+        futures::executor::block_on(adapter.set_location(payload.location))
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => ProtocolMessage::new(MessageType::Pong, serde_json::json!({"status": "ok"})),
+        Ok(Err(error)) => make_input_error(error.to_string()),
+        Err(error) => make_input_error(format!("GPS dispatch task failed: {}", error)),
     }
 }
 

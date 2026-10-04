@@ -345,10 +345,26 @@ class _ClipboardSheetState extends State<_ClipboardSheet> {
   }
 
   Future<void> _pasteFromDevice() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text;
-    if (text != null && mounted) {
-      setState(() => _controller.text = text);
+    // Reading the clipboard programmatically is restricted in browsers:
+    // Safari only allows it from a tap and shows its own "Paste" bubble, and
+    // it is unavailable entirely when the page isn't a secure context (plain
+    // http:// to a LAN server). Fail soft and point at the native paste menu.
+    String? text;
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      text = data?.text;
+    } catch (_) {
+      text = null;
+    }
+    if (!mounted) return;
+    if (text != null && text.isNotEmpty) {
+      setState(() => _controller.text = text!);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Couldn\'t read the clipboard here. Touch and hold the text box and choose Paste.'),
+        ),
+      );
     }
   }
 
