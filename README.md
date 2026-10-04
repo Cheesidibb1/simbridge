@@ -46,8 +46,8 @@ web app itself:
 ```
 
 The server protects simulator control with a password. It prints a generated password when it starts; set
-`SIMBRIDGE_PASSWORD` to a value of at least 12 characters before launch to use your own. The companion asks for the
-password when connecting and does not save it.
+`SIMBRIDGE_PASSWORD` to a value of at least 12 characters before launch to use your own. Enter the passcode when
+adding or changing the server. It is verified before the address is saved and kept in memory only.
 
 Open the printed `http://<ip>:8080/` in Safari on the same Wi-Fi, then **Share ▸ Add to Home Screen**.
 Full details, the list of changes and their reasons, troubleshooting and verification status are in

@@ -9,12 +9,10 @@ set "PORT=%~1"
 if not defined PORT set "PORT=8080"
 set "WEB_DIR=%ROOT%\companion\build\web"
 
-if exist "%WEB_DIR%\index.html" goto :start_server
-echo No web build found; building it first...
+echo Building the latest companion web app...
 call "%~dp0build-web.bat"
 if errorlevel 1 exit /b 1
 
-:start_server
 where cargo >nul 2>nul
 if errorlevel 1 (
     echo Cargo was not found on PATH. Install Rust from https://www.rust-lang.org/tools/install. 1>&2

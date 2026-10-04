@@ -133,9 +133,10 @@ cd server && cargo run --release -- --port 8080
 | `--no-cors` | Don't send CORS headers (fine for same-origin use) |
 | `--host 0.0.0.0` | Already the default, so the server is reachable from the phone |
 
-On startup, the server prints a generated password. The companion asks for it when you select a simulator and keeps
-it in memory only. To use a custom password, configure `SIMBRIDGE_PASSWORD` with at least 12 characters before
-starting the server. For example, in PowerShell:
+On startup, the server prints a generated password. Enter it in the server setup form, or in Settings when changing
+the server address. The app verifies it before saving the server and keeps it in memory only; after restarting the
+app, verify it again in Settings before connecting. To use a custom password, configure `SIMBRIDGE_PASSWORD` with
+at least 12 characters before starting the server. For example, in PowerShell:
 
 ```powershell
 $env:SIMBRIDGE_PASSWORD = "replace-with-a-long-random-password"
@@ -159,11 +160,13 @@ socket. Use HTTPS/WSS when connecting across an untrusted network.
 
 ## 🔐 Should I use HTTPS?
 
-Plain `http://` on your LAN **works** for everything the app does today. HTTPS buys you a few extras:
+Plain `http://` on your LAN works for manual GPS coordinates. HTTPS is required for Safari's device-location API and
+also enables a few other capabilities:
 
 | Capability | `http://` (LAN) | `https://` |
 |------------|:---:|:---:|
-| Mirror, touch, gestures, buttons, GPS entry | ✅ | ✅ |
+| Mirror, touch, gestures, buttons, manual GPS entry | ✅ | ✅ |
+| Use current location | ❌ | ✅ |
 | Add to Home Screen | ✅ | ✅ |
 | "Paste from this device" button | ❌ (falls back to long-press ▸ Paste) | ✅ |
 | Flutter service worker / offline cache | ❌ | ✅ |
@@ -182,7 +185,7 @@ This path has not been exercised here; the app-side logic is covered by `platfor
 | 🖼️ Screen mirror | ✅ | Frames are base64 PNG over WebSocket (server-side design, unchanged) |
 | 👆 Tap / swipe / long-press / pinch | ✅ | Pinch is cancelled at the Safari level so it reaches the app |
 | 🔘 Device buttons | ✅ | |
-| 📍 GPS entry | ✅ | Typed / preset coordinates. Not the phone's real GPS, which needs HTTPS and a code change |
+| 📍 GPS entry | ✅ | Enter coordinates manually or use the phone's current location; Safari requires HTTPS for location access |
 | 📋 Clipboard → simulator | ✅ | Type or long-press ▸ Paste |
 | 📋 Read phone clipboard button | ⚠️ | Needs HTTPS and a tap (Safari's "Paste" bubble) |
 | 🔔 Notifications banner | ✅ | In-app only, no web push |

@@ -35,7 +35,7 @@ class StorageService {
   String get deviceName => _prefs.getString(PrefsKeys.deviceName) ?? 'Flutter Companion';
   Future<void> setDeviceName(String value) => _prefs.setString(PrefsKeys.deviceName, value);
 
-  String get streamQuality => _prefs.getString(PrefsKeys.streamQuality) ?? 'high';
+  String get streamQuality => _prefs.getString(PrefsKeys.streamQuality) ?? 'low';
   Future<void> setStreamQuality(String value) =>
       _prefs.setString(PrefsKeys.streamQuality, value);
 

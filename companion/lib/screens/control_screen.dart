@@ -1,9 +1,14 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:provider/provider.dart';
 
 import '../models/client_payloads.dart';
 import '../models/server_payloads.dart';
+import '../models/simulator.dart';
 import '../providers/connection_provider.dart';
 import '../services/websocket_service.dart';
 import '../widgets/device_button_bar.dart';
@@ -155,7 +160,14 @@ class _ControlScreenState extends State<ControlScreen> {
             ),
           ),
           const Divider(height: 1),
-          DeviceButtonBar(onPressed: connection.sendDeviceButton),
+          DeviceButtonBar(
+            onPressed: connection.sendDeviceButton,
+            isIosSimulator:
+                connection.currentSimulator?.platform == SimulatorPlatform.ios,
+            isAndroidEmulator:
+              connection.currentSimulator?.id.startsWith('emulator-') ??
+                false,
+          ),
           const Divider(height: 1),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -233,6 +245,8 @@ class _GpsSheet extends StatefulWidget {
 class _GpsSheetState extends State<_GpsSheet> {
   final _latController = TextEditingController(text: '37.7749');
   final _lngController = TextEditingController(text: '-122.4194');
+  bool _gettingLocation = false;
+  String? _locationError;
 
   static const List<(String, double, double)> _presets = [
     ('San Francisco', 37.7749, -122.4194),
@@ -256,67 +270,143 @@ class _GpsSheetState extends State<_GpsSheet> {
     Navigator.of(context).pop();
   }
 
+  Future<void> _useCurrentLocation() async {
+    if (_gettingLocation) return;
+    setState(() {
+      _gettingLocation = true;
+      _locationError = null;
+    });
+
+    try {
+      if (kIsWeb &&
+          Uri.base.scheme != 'https' &&
+          Uri.base.host != 'localhost' &&
+          Uri.base.host != '127.0.0.1' &&
+          Uri.base.host != '::1') {
+        throw StateError(
+            'Browser location requires HTTPS. Open this app over HTTPS.');
+      }
+
+      if (!kIsWeb) {
+        if (!await Geolocator.isLocationServiceEnabled()) {
+          throw StateError('Turn on location services and try again.');
+        }
+
+        var permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        if (permission == LocationPermission.denied ||
+            permission == LocationPermission.deniedForever) {
+          throw StateError('Allow location access in this device settings.');
+        }
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 20),
+      );
+      if (!mounted) return;
+      _latController.text = position.latitude.toStringAsFixed(6);
+      _lngController.text = position.longitude.toStringAsFixed(6);
+    } on TimeoutException {
+      if (mounted) {
+        setState(
+            () => _locationError = 'Location lookup timed out. Try again.');
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() =>
+            _locationError = error.toString().replaceFirst('Bad state: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _gettingLocation = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 20,
-        right: 20,
-        top: 20,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Set GPS location',
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _latController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true, signed: true),
-                  decoration: const InputDecoration(
-                      labelText: 'Latitude', border: OutlineInputBorder()),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _lngController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true, signed: true),
-                  decoration: const InputDecoration(
-                      labelText: 'Longitude', border: OutlineInputBorder()),
-                ),
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text('Set GPS location',
+                style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: _gettingLocation ? null : _useCurrentLocation,
+              icon: _gettingLocation
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.my_location_rounded),
+              label: Text(
+                  _gettingLocation ? 'Finding location...' : 'Use my location'),
+            ),
+            if (_locationError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _locationError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: _presets.map((preset) {
-              final (label, lat, lng) = preset;
-              return ActionChip(
-                label: Text(label),
-                onPressed: () {
-                  _latController.text = lat.toString();
-                  _lngController.text = lng.toString();
-                },
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 20),
-          FilledButton.icon(
-            onPressed: _send,
-            icon: const Icon(Icons.send_rounded),
-            label: const Text('Send to simulator'),
-          ),
-        ],
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _latController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true, signed: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Latitude', border: OutlineInputBorder()),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _lngController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true, signed: true),
+                    decoration: const InputDecoration(
+                        labelText: 'Longitude', border: OutlineInputBorder()),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _presets.map((preset) {
+                final (label, lat, lng) = preset;
+                return ActionChip(
+                  label: Text(label),
+                  onPressed: () {
+                    _latController.text = lat.toString();
+                    _lngController.text = lng.toString();
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: _send,
+              icon: const Icon(Icons.send_rounded),
+              label: const Text('Send to simulator'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -362,7 +452,8 @@ class _ClipboardSheetState extends State<_ClipboardSheet> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Couldn\'t read the clipboard here. Touch and hold the text box and choose Paste.'),
+          content: Text(
+              'Couldn\'t read the clipboard here. Touch and hold the text box and choose Paste.'),
         ),
       );
     }

@@ -20,7 +20,7 @@ class AppDefaults {
   static const String serverHost = 'localhost';
   static const int serverPort = 8080;
   static const bool useTls = false;
-  static const int streamFps = 30;
+  static const int streamFps = 3;
   static const Duration pingInterval = Duration(seconds: 15);
   static const Duration reconnectInitialDelay = Duration(seconds: 1);
   static const Duration reconnectMaxDelay = Duration(seconds: 30);

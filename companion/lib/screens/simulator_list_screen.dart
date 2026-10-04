@@ -35,8 +35,14 @@ class _SimulatorListScreenState extends State<SimulatorListScreen> {
     final settings = context.read<SettingsProvider>();
     final connection = context.read<ConnectionProvider>();
     try {
-      final password = await _requestPassword();
-      if (password == null) return;
+      final password = settings.serverPassword;
+      if (password == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Verify the server passcode in Settings first.')),
+        );
+        return;
+      }
       await connection.connectToSimulator(
         simulator,
         settings.wsUri,
@@ -54,37 +60,6 @@ class _SimulatorListScreenState extends State<SimulatorListScreen> {
       );
     } finally {
       if (mounted) setState(() => _connecting = false);
-    }
-  }
-
-  Future<String?> _requestPassword() async {
-    final controller = TextEditingController();
-    try {
-      return await showDialog<String>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Server password'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            obscureText: true,
-            decoration: const InputDecoration(labelText: 'Password'),
-            onSubmitted: (_) => Navigator.of(dialogContext).pop(controller.text),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
-              child: const Text('Connect'),
-            ),
-          ],
-        ),
-      );
-    } finally {
-      controller.dispose();
     }
   }
 
@@ -183,7 +158,8 @@ class _MessageState extends StatelessWidget {
                   const SizedBox(height: 12),
                   Text(message, textAlign: TextAlign.center),
                   const SizedBox(height: 16),
-                  OutlinedButton(onPressed: onRetry, child: const Text('Retry')),
+                  OutlinedButton(
+                      onPressed: onRetry, child: const Text('Retry')),
                 ],
               ),
             ),

@@ -21,6 +21,7 @@ class SettingsProvider extends ChangeNotifier {
   bool audioEnabled;
   String themeMode; // 'system' | 'light' | 'dark'
   bool onboardingComplete;
+  String? _serverPassword;
 
   SettingsProvider._({
     required StorageService storage,
@@ -50,7 +51,7 @@ class SettingsProvider extends ChangeNotifier {
       deviceId: deviceId,
       deviceName: storage.deviceName,
       streamQuality: StreamQuality.fromWire(storage.streamQuality),
-      streamFps: storage.streamFps,
+      streamFps: storage.streamFps.clamp(1, 15).toInt(),
       audioEnabled: storage.audioEnabled,
       themeMode: storage.themeMode,
       onboardingComplete: storage.onboardingComplete,
@@ -66,7 +67,8 @@ class SettingsProvider extends ChangeNotifier {
   /// leaves no choice.
   bool get effectiveTls => useTls || tlsRequired;
 
-  String get httpBaseUrl => '${effectiveTls ? 'https' : 'http'}://$serverHost:$serverPort';
+  String get httpBaseUrl =>
+      '${effectiveTls ? 'https' : 'http'}://$serverHost:$serverPort';
 
   Uri get wsUri => Uri(
         scheme: effectiveTls ? 'wss' : 'ws',
@@ -74,6 +76,8 @@ class SettingsProvider extends ChangeNotifier {
         port: serverPort,
         path: '/ws',
       );
+
+  String? get serverPassword => _serverPassword;
 
   StreamConfig get streamConfig => StreamConfig(
         quality: streamQuality,
@@ -85,10 +89,18 @@ class SettingsProvider extends ChangeNotifier {
     required String host,
     required int port,
     required bool tls,
+    String? serverPassword,
   }) async {
+    final addressChanged =
+        serverHost != host || serverPort != port || useTls != tls;
     serverHost = host;
     serverPort = port;
     useTls = tls;
+    if (serverPassword != null) {
+      _serverPassword = serverPassword;
+    } else if (addressChanged) {
+      _serverPassword = null;
+    }
     await _storage.setServerHost(host);
     await _storage.setServerPort(port);
     await _storage.setUseTls(tls);

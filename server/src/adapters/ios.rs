@@ -118,9 +118,14 @@ impl IosSimulatorAdapter {
     }
 
     fn run_simctl_command(&self, args: &[&str]) -> Result<String, AdapterError> {
+        let Some((subcommand, subcommand_args)) = args.split_first() else {
+            return Err(AdapterError::InvalidParameter(
+                "simctl command cannot be empty".to_string(),
+            ));
+        };
         let output = Command::new("xcrun")
-            .args(["simctl", &self.device_id])
-            .args(args)
+            .args(["simctl", subcommand, &self.device_id])
+            .args(subcommand_args)
             .output()
             .map_err(|e| AdapterError::CommandFailed(format!("simctl command failed: {}", e)))?;
 
@@ -322,15 +327,14 @@ impl SimulatorAdapter for IosSimulatorAdapter {
             DeviceButton::Home => {
                 self.run_simctl_command(&["ui", "home"])?;
             }
-            DeviceButton::Lock => {
+            DeviceButton::PowerOff => {
                 self.run_simctl_command(&["shutdown"])?;
+            }
+            DeviceButton::PowerOn => {
+                self.run_simctl_command(&["boot"])?;
             }
             DeviceButton::Screenshot => {
                 self.run_simctl_command(&["io", "screenshot", "/tmp/screenshot.png"])?;
-            }
-            DeviceButton::VolumeUp | DeviceButton::VolumeDown | DeviceButton::Mute => {
-                // Volume controls on simulator
-                self.run_simctl_command(&["ui", "volume", "up"])?;
             }
             _ => {
                 return Err(AdapterError::NotSupported);

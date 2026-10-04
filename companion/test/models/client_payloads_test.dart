@@ -20,7 +20,8 @@ void main() {
 
       final json = payload.toJson();
       expect(json['simulator_id'], 'android-emu-1');
-      final touchJson = (json['touches'] as List<dynamic>).single as Map<String, dynamic>;
+      final touchJson =
+          (json['touches'] as List<dynamic>).single as Map<String, dynamic>;
       expect(touchJson['id'], 1);
       expect(touchJson['x'], 100.5);
       expect(touchJson['phase'], 'began');
@@ -69,6 +70,9 @@ void main() {
         DeviceButtonType.home: 'home',
         DeviceButtonType.back: 'back',
         DeviceButtonType.appSwitcher: 'app_switcher',
+        DeviceButtonType.power: 'power',
+        DeviceButtonType.powerOn: 'power_on',
+        DeviceButtonType.powerOff: 'power_off',
         DeviceButtonType.lock: 'lock',
         DeviceButtonType.unlock: 'unlock',
         DeviceButtonType.volumeUp: 'volume_up',
@@ -88,7 +92,8 @@ void main() {
 
   group('ClipboardSyncPayload', () {
     test('defaults content_type to text', () {
-      const payload = ClipboardSyncPayload(simulatorId: 'sim-1', content: 'hello');
+      const payload =
+          ClipboardSyncPayload(simulatorId: 'sim-1', content: 'hello');
       expect(payload.toJson()['content_type'], 'text');
     });
   });

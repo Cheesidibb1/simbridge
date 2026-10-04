@@ -2,6 +2,7 @@
 
 use crate::adapters::android::{resolve_adb_path, AndroidEmulatorAdapter};
 use crate::adapters::interface::SimulatorAdapter;
+use crate::adapters::ios::IosSimulatorAdapter;
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
@@ -15,9 +16,9 @@ use futures::stream::StreamExt;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 use simbridge_shared::protocol::{
-    deserialize_message, serialize_message, AuthRequestPayload, FrameEncoding, GesturePayload,
-    GpsUpdatePayload, Message as ProtocolMessage, MessageType, ScreenFramePayload,
-    TouchEventPayload,
+    deserialize_message, serialize_message, AuthRequestPayload, DeviceButton, DeviceButtonPayload,
+    FrameEncoding, GesturePayload, GpsUpdatePayload, Message as ProtocolMessage, MessageType,
+    ScreenFramePayload, StreamQuality, TouchEventPayload,
 };
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -159,8 +160,11 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
                                                 .get("simulator_id")
                                                 .and_then(|value| value.as_str())
                                             {
+                                                let (quality, fps) = stream_preferences(&protocol_msg);
                                                 screen_refresh_task = Some(start_screen_refresh(
                                                     simulator_id.to_string(),
+                                                    quality,
+                                                    fps,
                                                     frame_sender.clone(),
                                                 ));
                                             }
@@ -184,6 +188,9 @@ async fn handle_socket(socket: WebSocket, state: WebSocketServerState) {
                                     }
                                     MessageType::GpsUpdate => {
                                         handle_gps_update(&protocol_msg).await
+                                    }
+                                    MessageType::DeviceButton => {
+                                        handle_device_button(&protocol_msg).await
                                     }
                                     simbridge_shared::protocol::MessageType::WebrtcOffer => {
                                         // Handle WebRTC offer - forward to signaling handler
@@ -322,6 +329,53 @@ async fn handle_gps_update(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
     }
 }
 
+async fn handle_device_button(protocol_msg: &ProtocolMessage) -> ProtocolMessage {
+    let payload = match serde_json::from_value::<DeviceButtonPayload>(protocol_msg.payload.clone())
+    {
+        Ok(payload) => payload,
+        Err(error) => return make_input_error(format!("Invalid device button: {}", error)),
+    };
+    let simulator_id = payload.simulator_id;
+
+    if matches!(payload.button, DeviceButton::Screenshot) {
+        return match capture_screen_frame(&simulator_id).await {
+            Ok(Ok(frame)) => make_screen_frame_message(simulator_id, frame, StreamQuality::Low),
+            Ok(Err(error)) => make_input_error(error.to_string()),
+            Err(error) => make_input_error(format!("Screenshot task failed: {}", error)),
+        };
+    }
+
+    let button = payload.button;
+    let result = tokio::task::spawn_blocking(move || {
+        futures::executor::block_on(async move {
+            if is_ios_simulator_id(&simulator_id) {
+                let mut adapter = IosSimulatorAdapter::new(simulator_id, String::new());
+                adapter.press_button(button).await
+            } else {
+                let mut adapter = AndroidEmulatorAdapter::new(simulator_id, String::new())
+                    .with_adb_path(resolve_adb_path());
+                adapter.press_button(button).await
+            }
+        })
+    })
+    .await;
+
+    match result {
+        Ok(Ok(())) => ProtocolMessage::new(MessageType::Pong, serde_json::json!({"status": "ok"})),
+        Ok(Err(error)) => make_input_error(error.to_string()),
+        Err(error) => make_input_error(format!("Device button task failed: {}", error)),
+    }
+}
+
+fn is_ios_simulator_id(simulator_id: &str) -> bool {
+    simulator_id.starts_with("ios-")
+        || (simulator_id.len() == 36 && simulator_id.matches('-').count() == 4)
+        || (simulator_id.len() == 40
+            && simulator_id
+                .chars()
+                .all(|character| character.is_ascii_hexdigit()))
+}
+
 fn make_input_error(message: String) -> ProtocolMessage {
     ProtocolMessage::new(
         MessageType::Error,
@@ -340,9 +394,10 @@ async fn handle_connect_simulator(protocol_msg: &ProtocolMessage) -> ProtocolMes
         .and_then(|value| value.as_str())
         .unwrap_or_default()
         .to_string();
+    let (quality, _) = stream_preferences(protocol_msg);
 
     match capture_screen_frame(&simulator_id).await {
-        Ok(Ok(frame)) => make_screen_frame_message(simulator_id, frame),
+        Ok(Ok(frame)) => make_screen_frame_message(simulator_id, frame, quality),
         Ok(Err(error)) => ProtocolMessage::new(
             MessageType::Error,
             serde_json::json!({
@@ -362,10 +417,14 @@ async fn handle_connect_simulator(protocol_msg: &ProtocolMessage) -> ProtocolMes
 
 fn start_screen_refresh(
     simulator_id: String,
+    quality: StreamQuality,
+    fps: u32,
     frame_sender: mpsc::UnboundedSender<ProtocolMessage>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_millis(100));
+        let interval_ms = 1000 / u64::from(fps.clamp(1, 15));
+        let mut interval = tokio::time::interval(std::time::Duration::from_millis(interval_ms));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
         loop {
             interval.tick().await;
@@ -373,7 +432,11 @@ fn start_screen_refresh(
             match capture_screen_frame(&simulator_id).await {
                 Ok(Ok(frame)) => {
                     if frame_sender
-                        .send(make_screen_frame_message(simulator_id.clone(), frame))
+                        .send(make_screen_frame_message(
+                            simulator_id.clone(),
+                            frame,
+                            quality,
+                        ))
                         .is_err()
                     {
                         break;
@@ -390,14 +453,62 @@ fn start_screen_refresh(
     })
 }
 
-fn make_screen_frame_message(simulator_id: String, frame: Vec<u8>) -> ProtocolMessage {
-    let (width, height) = image::load_from_memory(&frame)
-        .map(|image| (image.width(), image.height()))
-        .unwrap_or((0, 0));
+fn stream_preferences(protocol_msg: &ProtocolMessage) -> (StreamQuality, u32) {
+    let config = protocol_msg.payload.get("stream_config");
+    let quality = config
+        .and_then(|config| config.get("quality"))
+        .cloned()
+        .and_then(|value| serde_json::from_value::<StreamQuality>(value).ok())
+        .unwrap_or(StreamQuality::Low);
+    let fps = config
+        .and_then(|config| config.get("fps"))
+        .and_then(serde_json::Value::as_u64)
+        .unwrap_or(3)
+        .clamp(1, 15) as u32;
+    (quality, fps)
+}
+
+fn make_screen_frame_message(
+    simulator_id: String,
+    frame: Vec<u8>,
+    quality: StreamQuality,
+) -> ProtocolMessage {
+    let decoded = image::load_from_memory(&frame).ok();
+    let original_dimensions = decoded
+        .as_ref()
+        .map(|image| (image.width(), image.height()));
+    let encoded = decoded.and_then(|decoded| {
+        let max_dimension = match quality {
+            StreamQuality::Low => 1600,
+            StreamQuality::Medium => 1920,
+            StreamQuality::High => 2560,
+            StreamQuality::Ultra => 3840,
+        };
+        let resized = decoded.resize(
+            max_dimension,
+            max_dimension,
+            image::imageops::FilterType::Triangle,
+        );
+        let jpeg_quality = match quality {
+            StreamQuality::Low => 55,
+            StreamQuality::Medium => 68,
+            StreamQuality::High => 80,
+            StreamQuality::Ultra => 90,
+        };
+        let mut jpeg = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, jpeg_quality)
+            .encode_image(&resized)
+            .ok()?;
+        Some(jpeg)
+    });
+    let (frame, encoding) = encoded
+        .map(|jpeg| (jpeg, FrameEncoding::Jpeg))
+        .unwrap_or((frame, FrameEncoding::Png));
+    let (width, height) = original_dimensions.unwrap_or((0, 0));
     let payload = ScreenFramePayload {
         simulator_id,
         frame_data: base64::engine::general_purpose::STANDARD.encode(frame),
-        encoding: FrameEncoding::Png,
+        encoding,
         width,
         height,
         timestamp: chrono::Utc::now(),
@@ -413,9 +524,16 @@ async fn capture_screen_frame(
 ) -> Result<Result<Vec<u8>, crate::adapters::interface::AdapterError>, tokio::task::JoinError> {
     let simulator_id = simulator_id.to_string();
     tokio::task::spawn_blocking(move || {
-        let mut adapter = AndroidEmulatorAdapter::new(simulator_id, String::new())
-            .with_adb_path(resolve_adb_path());
-        futures::executor::block_on(adapter.start_screenshot())
+        futures::executor::block_on(async move {
+            if is_ios_simulator_id(&simulator_id) {
+                let mut adapter = IosSimulatorAdapter::new(simulator_id, String::new());
+                adapter.start_screenshot().await
+            } else {
+                let mut adapter = AndroidEmulatorAdapter::new(simulator_id, String::new())
+                    .with_adb_path(resolve_adb_path());
+                adapter.start_screenshot().await
+            }
+        })
     })
     .await
 }

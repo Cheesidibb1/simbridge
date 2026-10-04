@@ -421,6 +421,25 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
             DeviceButton::AppSwitcher => {
                 self.run_adb_shell_command("input keyevent KEYCODE_APP_SWITCH")?;
             }
+            DeviceButton::Power | DeviceButton::Lock => {
+                self.run_adb_shell_command("input keyevent KEYCODE_POWER")?;
+            }
+            DeviceButton::RotateLeft => {
+                self.run_adb_shell_command("settings put system accelerometer_rotation 0")?;
+                self.run_adb_shell_command("settings put system user_rotation 3")?;
+            }
+            DeviceButton::RotateRight => {
+                self.run_adb_shell_command("settings put system accelerometer_rotation 0")?;
+                self.run_adb_shell_command("settings put system user_rotation 1")?;
+            }
+            DeviceButton::Shake => {
+                if !self.device_id.starts_with("emulator-") {
+                    return Err(AdapterError::NotSupported);
+                }
+                self.run_adb_command(&["emu", "sensor", "set", "acceleration", "8:0:0"])?;
+                self.run_adb_command(&["emu", "sensor", "set", "acceleration", "-8:0:0"])?;
+                self.run_adb_command(&["emu", "sensor", "set", "acceleration", "0:0:0"])?;
+            }
             DeviceButton::VolumeUp => {
                 self.run_adb_shell_command("input keyevent KEYCODE_VOLUME_UP")?;
             }
@@ -430,9 +449,6 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
             DeviceButton::Mute => {
                 self.run_adb_shell_command("input keyevent KEYCODE_MUTE")?;
             }
-            DeviceButton::Lock => {
-                self.run_adb_shell_command("input keyevent KEYCODE_POWER")?;
-            }
             DeviceButton::Unlock => {
                 // Turn screen on and unlock
                 self.run_adb_shell_command("input keyevent KEYCODE_WAKEUP")?;
@@ -440,6 +456,15 @@ impl SimulatorAdapter for AndroidEmulatorAdapter {
             }
             DeviceButton::Screenshot => {
                 self.run_adb_shell_command("screencap -p /sdcard/screenshot.png")?;
+            }
+            DeviceButton::PowerOff => {
+                if !self.device_id.starts_with("emulator-") {
+                    return Err(AdapterError::NotSupported);
+                }
+                self.run_adb_command(&["emu", "kill"])?;
+            }
+            DeviceButton::PowerOn => {
+                return Err(AdapterError::NotSupported);
             }
             _ => {
                 return Err(AdapterError::NotSupported);

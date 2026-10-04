@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/settings_provider.dart';
+import '../services/api_exception.dart';
+import '../services/server_password_service.dart';
 import 'simulator_list_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -16,15 +18,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   late final TextEditingController _hostController;
   late final TextEditingController _portController;
   late final TextEditingController _nameController;
+  late final TextEditingController _passwordController;
   bool _useTls = false;
+  bool _saving = false;
 
   @override
   void initState() {
     super.initState();
     final settings = context.read<SettingsProvider>();
     _hostController = TextEditingController(text: settings.serverHost);
-    _portController = TextEditingController(text: settings.serverPort.toString());
+    _portController =
+        TextEditingController(text: settings.serverPort.toString());
     _nameController = TextEditingController(text: settings.deviceName);
+    _passwordController = TextEditingController();
     _useTls = settings.effectiveTls;
   }
 
@@ -33,23 +39,43 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _hostController.dispose();
     _portController.dispose();
     _nameController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
   Future<void> _continue() async {
-    if (!_formKey.currentState!.validate()) return;
+    if (_saving || !_formKey.currentState!.validate()) return;
     final settings = context.read<SettingsProvider>();
-    await settings.updateServer(
-      host: _hostController.text.trim(),
-      port: int.parse(_portController.text.trim()),
-      tls: _useTls,
-    );
-    await settings.updateDeviceName(_nameController.text.trim());
-    await settings.completeOnboarding();
-    if (!mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const SimulatorListScreen()),
-    );
+    final host = _hostController.text.trim();
+    final port = int.parse(_portController.text.trim());
+    final password = _passwordController.text;
+    final tls = settings.tlsRequired || _useTls;
+    setState(() => _saving = true);
+    try {
+      await ServerPasswordService.verify(
+        Uri(scheme: tls ? 'wss' : 'ws', host: host, port: port, path: '/ws'),
+        password,
+      );
+      await settings.updateServer(
+        host: host,
+        port: port,
+        tls: tls,
+        serverPassword: password,
+      );
+      await settings.updateDeviceName(_nameController.text.trim());
+      await settings.completeOnboarding();
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (_) => const SimulatorListScreen()),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   @override
@@ -99,7 +125,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         border: OutlineInputBorder(),
                       ),
                       validator: (value) =>
-                          (value == null || value.trim().isEmpty) ? 'Required' : null,
+                          (value == null || value.trim().isEmpty)
+                              ? 'Required'
+                              : null,
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
@@ -120,6 +148,21 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                     const SizedBox(height: 12),
                     TextFormField(
+                      controller: _passwordController,
+                      obscureText: true,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: const InputDecoration(
+                        labelText: 'Server passcode',
+                        prefixIcon: Icon(Icons.lock_outline_rounded),
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) => (value == null || value.length < 12)
+                          ? 'Use at least 12 characters'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
                       controller: _nameController,
                       decoration: const InputDecoration(
                         labelText: 'This device\'s name',
@@ -127,7 +170,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         border: OutlineInputBorder(),
                       ),
                       validator: (value) =>
-                          (value == null || value.trim().isEmpty) ? 'Required' : null,
+                          (value == null || value.trim().isEmpty)
+                              ? 'Required'
+                              : null,
                     ),
                     const SizedBox(height: 4),
                     SwitchListTile(
@@ -136,7 +181,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       // A page loaded over https can't open insecure sockets
                       // (Safari blocks mixed content), so the switch is locked on.
                       subtitle: context.read<SettingsProvider>().tlsRequired
-                          ? const Text('Required: this page was loaded over https')
+                          ? const Text(
+                              'Required: this page was loaded over https')
                           : null,
                       value: _useTls,
                       onChanged: context.read<SettingsProvider>().tlsRequired
@@ -145,11 +191,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     ),
                     const SizedBox(height: 20),
                     FilledButton.icon(
-                      onPressed: _continue,
-                      icon: const Icon(Icons.arrow_forward_rounded),
+                      onPressed: _saving ? null : _continue,
+                      icon: _saving
+                          ? const SizedBox.square(
+                              dimension: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.arrow_forward_rounded),
                       label: const Padding(
                         padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('Continue'),
+                        child: Text('Verify server and continue'),
                       ),
                     ),
                   ],

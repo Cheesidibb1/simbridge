@@ -3,6 +3,9 @@ import 'package:provider/provider.dart';
 
 import '../models/session.dart';
 import '../providers/settings_provider.dart';
+import '../providers/simulator_list_provider.dart';
+import '../services/api_exception.dart';
+import '../services/server_password_service.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -15,14 +18,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _hostController;
   late final TextEditingController _portController;
   late final TextEditingController _nameController;
+  late final TextEditingController _passwordController;
+  bool _useTls = false;
+  bool _savingServer = false;
 
   @override
   void initState() {
     super.initState();
     final settings = context.read<SettingsProvider>();
     _hostController = TextEditingController(text: settings.serverHost);
-    _portController = TextEditingController(text: settings.serverPort.toString());
+    _portController =
+        TextEditingController(text: settings.serverPort.toString());
     _nameController = TextEditingController(text: settings.deviceName);
+    _passwordController = TextEditingController();
+    _useTls = settings.effectiveTls;
   }
 
   @override
@@ -30,25 +39,54 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _hostController.dispose();
     _portController.dispose();
     _nameController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
-  void _saveServer(SettingsProvider settings) {
+  Future<void> _saveServer(SettingsProvider settings) async {
+    if (_savingServer) return;
+    final host = _hostController.text.trim();
     final port = int.tryParse(_portController.text.trim());
-    if (port == null) {
+    if (host.isEmpty || port == null || port <= 0 || port > 65535) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid port number')),
+        const SnackBar(content: Text('Enter a valid server host and port')),
       );
       return;
     }
-    settings.updateServer(
-      host: _hostController.text.trim(),
-      port: port,
-      tls: settings.useTls,
-    );
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Server address saved')),
-    );
+    final password = _passwordController.text;
+    if (password.runes.length < 12) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Enter a passcode of at least 12 characters')),
+      );
+      return;
+    }
+    final tls = settings.tlsRequired || _useTls;
+    setState(() => _savingServer = true);
+    try {
+      await ServerPasswordService.verify(
+        Uri(scheme: tls ? 'wss' : 'ws', host: host, port: port, path: '/ws'),
+        password,
+      );
+      await settings.updateServer(
+        host: host,
+        port: port,
+        tls: tls,
+        serverPassword: password,
+      );
+      if (!mounted) return;
+      context.read<SimulatorListProvider>().refresh();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Server verified and saved')),
+      );
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } finally {
+      if (mounted) setState(() => _savingServer = false);
+    }
   }
 
   @override
@@ -67,16 +105,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
             autocorrect: false,
             enableSuggestions: false,
             textCapitalization: TextCapitalization.none,
-            decoration:
-                const InputDecoration(labelText: 'Host or IP', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+                labelText: 'Host or IP', border: OutlineInputBorder()),
             onSubmitted: (_) => _saveServer(settings),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _portController,
             keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Port', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+                labelText: 'Port', border: OutlineInputBorder()),
             onSubmitted: (_) => _saveServer(settings),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _passwordController,
+            obscureText: true,
+            autocorrect: false,
+            enableSuggestions: false,
+            decoration: const InputDecoration(
+              labelText: 'Server passcode',
+              border: OutlineInputBorder(),
+            ),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -86,26 +136,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: settings.tlsRequired
                 ? const Text('Required: this page was loaded over https')
                 : null,
-            value: settings.effectiveTls,
+            value: _useTls,
             onChanged: settings.tlsRequired
                 ? null
-                : (value) => settings.updateServer(
-                      host: _hostController.text.trim(),
-                      port: int.tryParse(_portController.text.trim()) ?? settings.serverPort,
-                      tls: value,
-                    ),
+                : (value) => setState(() => _useTls = value),
           ),
           const SizedBox(height: 4),
           FilledButton(
-            onPressed: () => _saveServer(settings),
-            child: const Text('Save server address'),
+            onPressed: _savingServer ? null : () => _saveServer(settings),
+            child:
+                Text(_savingServer ? 'Verifying...' : 'Verify and save server'),
           ),
           const Divider(height: 32),
           const _SectionHeader('This device'),
           TextField(
             controller: _nameController,
-            decoration:
-                const InputDecoration(labelText: 'Device name', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+                labelText: 'Device name', border: OutlineInputBorder()),
             onSubmitted: (value) => settings.updateDeviceName(value.trim()),
           ),
           const SizedBox(height: 8),
@@ -117,10 +164,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const _SectionHeader('Screen mirroring'),
           DropdownButtonFormField<StreamQuality>(
             initialValue: settings.streamQuality,
-            decoration:
-                const InputDecoration(labelText: 'Stream quality', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+                labelText: 'Stream quality', border: OutlineInputBorder()),
             items: StreamQuality.values
-                .map((quality) => DropdownMenuItem(value: quality, child: Text(quality.name)))
+                .map((quality) =>
+                    DropdownMenuItem(value: quality, child: Text(quality.name)))
                 .toList(),
             onChanged: (value) {
               if (value != null) settings.updateStreamConfig(quality: value);
@@ -130,17 +178,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Text('Target frame rate: ${settings.streamFps} fps'),
           Slider(
             value: settings.streamFps.toDouble(),
-            min: 5,
-            max: 60,
-            divisions: 11,
+            min: 1,
+            max: 15,
+            divisions: 14,
             label: '${settings.streamFps} fps',
-            onChanged: (value) => settings.updateStreamConfig(fps: value.round()),
+            onChanged: (value) =>
+                settings.updateStreamConfig(fps: value.round()),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text('Audio'),
             value: settings.audioEnabled,
-            onChanged: (value) => settings.updateStreamConfig(audioEnabled: value),
+            onChanged: (value) =>
+                settings.updateStreamConfig(audioEnabled: value),
           ),
           const Divider(height: 32),
           const _SectionHeader('Appearance'),
@@ -151,7 +201,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ButtonSegment(value: 'dark', label: Text('Dark')),
             ],
             selected: {settings.themeMode},
-            onSelectionChanged: (selection) => settings.updateThemeMode(selection.first),
+            onSelectionChanged: (selection) =>
+                settings.updateThemeMode(selection.first),
           ),
         ],
       ),

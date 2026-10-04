@@ -4,13 +4,23 @@ import '../models/client_payloads.dart';
 
 class DeviceButtonBar extends StatelessWidget {
   final void Function(DeviceButtonType button) onPressed;
+  final bool isIosSimulator;
+  final bool isAndroidEmulator;
 
-  const DeviceButtonBar({super.key, required this.onPressed});
+  const DeviceButtonBar({
+    super.key,
+    required this.onPressed,
+    this.isIosSimulator = false,
+    this.isAndroidEmulator = false,
+  });
 
   static const List<(IconData, String, DeviceButtonType)> _buttons = [
     (Icons.arrow_back_rounded, 'Back', DeviceButtonType.back),
     (Icons.circle_outlined, 'Home', DeviceButtonType.home),
     (Icons.apps_rounded, 'Recents', DeviceButtonType.appSwitcher),
+    (Icons.power_settings_new_rounded, 'Power', DeviceButtonType.power),
+    (Icons.power_settings_new_rounded, 'Power on', DeviceButtonType.powerOn),
+    (Icons.power_off_rounded, 'Power off', DeviceButtonType.powerOff),
     (Icons.rotate_left_rounded, 'Rotate L', DeviceButtonType.rotateLeft),
     (Icons.rotate_right_rounded, 'Rotate R', DeviceButtonType.rotateRight),
     (Icons.volume_down_rounded, 'Vol -', DeviceButtonType.volumeDown),
@@ -24,15 +34,31 @@ class DeviceButtonBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final buttons = isIosSimulator
+        ? _buttons
+            .where((button) => {
+                  DeviceButtonType.home,
+                  DeviceButtonType.powerOn,
+                  DeviceButtonType.powerOff,
+                  DeviceButtonType.screenshot,
+                }.contains(button.$3))
+            .toList()
+        : _buttons
+            .where((button) =>
+                button.$3 != DeviceButtonType.powerOn &&
+            (button.$3 != DeviceButtonType.powerOff ||
+              isAndroidEmulator))
+            .toList();
+
     return SizedBox(
       height: 56,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        itemCount: _buttons.length,
+        itemCount: buttons.length,
         separatorBuilder: (_, __) => const SizedBox(width: 4),
         itemBuilder: (context, index) {
-          final (icon, label, type) = _buttons[index];
+          final (icon, label, type) = buttons[index];
           return IconButton.filledTonal(
             icon: Icon(icon),
             tooltip: label,

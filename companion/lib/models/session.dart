@@ -39,16 +39,16 @@ class StreamConfig {
   final String? videoCodec;
 
   const StreamConfig({
-    this.quality = StreamQuality.high,
-    this.fps = 30,
+    this.quality = StreamQuality.low,
+    this.fps = 3,
     this.audioEnabled = false,
     this.videoCodec,
   });
 
   factory StreamConfig.fromJson(Map<String, dynamic> json) {
     return StreamConfig(
-      quality: StreamQuality.fromWire(json['quality'] as String? ?? 'high'),
-      fps: (json['fps'] as num?)?.toInt() ?? 30,
+      quality: StreamQuality.fromWire(json['quality'] as String? ?? 'low'),
+      fps: (json['fps'] as num?)?.toInt() ?? 3,
       audioEnabled: json['audio_enabled'] as bool? ?? false,
       videoCodec: json['video_codec'] as String?,
     );
